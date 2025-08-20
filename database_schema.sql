@@ -1,0 +1,43 @@
+-- MySQL 테이블 생성 스크립트
+-- Helios CCTV 데이터베이스
+-- 
+-- 주의: 테이블은 이미 생성되어 있음
+-- 실제 테이블 구조:
+-- 
+-- cctvs 테이블:
+--   - id (int, PK)
+--   - location (varchar(255))
+--   - latitude (decimal(9,6))
+--   - longitude (decimal(9,6))  
+--   - point (point, SRID 4326)
+--   - status (varchar(20))
+--   - region_id (int)
+--   - created_at (datetime)
+--   - updated_at (datetime)
+--
+-- regions 테이블:
+--   - id (int, PK)
+--   - adm_sect_c (varchar(20))
+--   - sgg_nm (varchar(100)) 
+--   - sgg_oid (int)
+--   - col_adm_se (varchar(20))
+--   - polygon (geometry)
+--   - created_at (datetime)
+--   - updated_at (datetime)
+
+-- 공간 검색 예시 쿼리들:
+
+-- 1. 특정 좌표에서 1km 반경 내 CCTV 찾기
+-- SELECT * FROM cctvs 
+-- WHERE ST_Distance_Sphere(point, ST_GeomFromText('POINT(127.0276 37.4979)', 4326)) <= 1000;
+
+-- 2. 특정 행정구역 내 CCTV 개수
+-- SELECT r.sgg_nm, COUNT(c.id) as cctv_count
+-- FROM regions r
+-- LEFT JOIN cctvs c ON r.id = c.region_id
+-- GROUP BY r.id, r.sgg_nm;
+
+-- 3. 좌표 범위 내 CCTV 조회
+-- SELECT * FROM cctvs 
+-- WHERE latitude BETWEEN 36.84606018570888 AND 37.90300313505868
+-- AND longitude BETWEEN 125.86370427196482 AND 128.30432205756796;
