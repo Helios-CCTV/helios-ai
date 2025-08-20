@@ -1,26 +1,64 @@
+import os
+import logging
 from fastapi import FastAPI
-from app.api.endpoints import items, users, detection
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.api.api_v1.api import api_router
 from app.core.config import settings
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# 결과 및 모델 디렉토리 생성
+os.makedirs("results", exist_ok=True)
+os.makedirs("models", exist_ok=True)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
 
-app.include_router(users.router, prefix=settings.API_V1_STR)
-app.include_router(items.router, prefix=settings.API_V1_STR)
-app.include_router(detection.router, prefix=settings.API_V1_STR)
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
+# API 라우터 포함
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# 정적 파일 서비스
+app.mount("/results", StaticFiles(directory="results"), name="results")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", include_in_schema=False)
 async def root():
-    return {"message": "Helios CCTV API에 오신 것을 환영합니다!"}
+    """루트 경로는 API 문서로 리다이렉트합니다."""
+    return RedirectResponse(url="/docs")
 
-@app.get("/health")
+@app.get("/stream-test", include_in_schema=False)
+async def stream_test():
+    """스트리밍 테스트 페이지로 리다이렉트합니다."""
+    return RedirectResponse(url="/static/stream_test.html")
+
+@app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "ok"}
+    """API 상태 체크"""
+    return {"status": "ok", "version": settings.VERSION}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    logger.info(f"Starting {settings.PROJECT_NAME} version {settings.VERSION}")
+    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
