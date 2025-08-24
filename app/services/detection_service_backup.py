@@ -715,11 +715,10 @@ class DetectionService:
         grid_height: int = 4,
         sample_interval: int = 1,
         duration_seconds: int = 20,
-        include_result_image: bool = True,
-        include_process_steps: bool = True
+        include_result_image: bool = True
     ) -> Dict[str, Any]:
         """
-        비디오에서 배경 이미지 추출 (과정 시각화 포함)
+        비디오에서 배경 이미지 추출
         
         Args:
             video_path: 비디오 파일 경로
@@ -728,7 +727,6 @@ class DetectionService:
             sample_interval: 프레임 샘플링 간격
             duration_seconds: 분석할 길이(초)
             include_result_image: 결과 이미지 포함 여부
-            include_process_steps: 과정 시각화 이미지 포함 여부
             
         Returns:
             Dict: 배경 추출 결과
@@ -758,10 +756,6 @@ class DetectionService:
             processed_frames = 0
             frame_count = 0
             
-            # 과정 시각화를 위한 샘플 프레임들 저장
-            sample_frames = []
-            progress_steps = []
-            
             print("프레임 처리 시작...")
             while frame_count < total_frames:
                 ret, frame = cap.read()
@@ -770,12 +764,6 @@ class DetectionService:
                 
                 # 샘플링 간격에 따라 프레임 건너뛰기
                 if frame_count % sample_interval == 0:
-                    # 발표용으로 첫 번째, 중간, 마지막 프레임들 저장
-                    if include_process_steps and (processed_frames == 0 or 
-                                                processed_frames == total_frames // (2 * sample_interval) or
-                                                processed_frames == total_frames // sample_interval - 1):
-                        sample_frames.append(frame.copy())
-                    
                     # 각 구역별로 프레임 분할하여 처리
                     for grid_y in range(grid_height):
                         for grid_x in range(grid_width):
@@ -804,9 +792,6 @@ class DetectionService:
             # 그리드 시각화를 위한 이미지 생성
             grid_overlay = np.zeros((height, width, 3), dtype=np.uint8)
             
-            # 과정 시각화를 위한 단계별 배경 이미지들
-            step_backgrounds = []
-            
             for grid_y in range(grid_height):
                 for grid_x in range(grid_width):
                     if grid_pixels[grid_y][grid_x]:
@@ -821,20 +806,6 @@ class DetectionService:
                         end_x = min((grid_x + 1) * grid_w, width)
                         
                         background[start_y:end_y, start_x:end_x] = median_region
-                        
-                        # 과정 시각화: 각 구역이 완성될 때마다 중간 결과 저장
-                        if include_process_steps and ((grid_y * grid_width + grid_x) % 4 == 0):
-                            step_bg = background.copy()
-                            # 아직 처리되지 않은 구역들을 회색으로 표시
-                            for y in range(grid_height):
-                                for x in range(grid_width):
-                                    if y * grid_width + x > grid_y * grid_width + grid_x:
-                                        sy = y * grid_h
-                                        ey = min((y + 1) * grid_h, height)
-                                        sx = x * grid_w
-                                        ex = min((x + 1) * grid_w, width)
-                                        step_bg[sy:ey, sx:ex] = [128, 128, 128]  # 회색
-                            step_backgrounds.append(step_bg.copy())
                         
                         # 그리드 경계선 그리기 (시각화용)
                         cv2.rectangle(grid_overlay, (start_x, start_y), (end_x-1, end_y-1), 
@@ -888,47 +859,6 @@ class DetectionService:
                 _, overlay_encoded = cv2.imencode('.jpg', grid_only)
                 overlay_base64 = base64.b64encode(overlay_encoded).decode('utf-8')
                 result["grid_overlay"] = overlay_base64
-                
-                # 4. 과정 시각화 이미지들 (발표용)
-                if include_process_steps:
-                    # 샘플 프레임들
-                    result["sample_frames"] = []
-                    for i, frame in enumerate(sample_frames):
-                        _, frame_encoded = cv2.imencode('.jpg', frame)
-                        frame_base64 = base64.b64encode(frame_encoded).decode('utf-8')
-                        result["sample_frames"].append({
-                            "step": i + 1,
-                            "description": f"원본 프레임 {i + 1}",
-                            "image": frame_base64
-                        })
-                    
-                    # 배경 생성 단계별 이미지들
-                    result["process_steps"] = []
-                    for i, step_bg in enumerate(step_backgrounds):
-                        _, step_encoded = cv2.imencode('.jpg', step_bg)
-                        step_base64 = base64.b64encode(step_encoded).decode('utf-8')
-                        completed_regions = (i + 1) * 4
-                        result["process_steps"].append({
-                            "step": i + 1,
-                            "description": f"구역 {completed_regions}개 완성",
-                            "image": step_base64
-                        })
-                    
-                    # 전/후 비교 이미지 생성
-                    if sample_frames:
-                        # 첫 번째 프레임과 최종 배경 이미지 비교
-                        first_frame = sample_frames[0]
-                        comparison = np.hstack([first_frame, background])
-                        
-                        # 비교 텍스트 추가
-                        cv2.putText(comparison, "BEFORE (Original Frame)", 
-                                  (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        cv2.putText(comparison, "AFTER (Background Extracted)", 
-                                  (width + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        
-                        _, comp_encoded = cv2.imencode('.jpg', comparison)
-                        comp_base64 = base64.b64encode(comp_encoded).decode('utf-8')
-                        result["comparison_image"] = comp_base64
             
             # 배경 이미지 파일들로 저장
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

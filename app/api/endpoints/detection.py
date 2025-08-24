@@ -34,7 +34,7 @@ def get_detection_service():
 @router.post("/analyze", response_model=DetectionResponse)
 async def analyze_road_damage(
     file: UploadFile = File(...),
-    confidence: float = Form(0.25),
+    confidence: float = Form(0.1),
     include_image: bool = Form(True),
     location_lat: Optional[float] = Form(None, description="위도 정보"),
     location_lng: Optional[float] = Form(None, description="경도 정보"),
@@ -83,7 +83,7 @@ async def analyze_road_damage(
 async def analyze_road_damage_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    confidence: float = Form(0.25),
+    confidence: float = Form(0.1),
     fps_interval: int = Form(1, description="몇 프레임마다 탐지를 수행할지 설정"),
     video_id: Optional[str] = Form(None, description="비디오 식별자")
 ):
@@ -189,7 +189,7 @@ async def get_damage_statistics(
 async def batch_analyze_images(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
-    confidence: float = Form(0.25),
+    confidence: float = Form(0.1),
     include_images: bool = Form(False),
     job_id: Optional[str] = Form(None)
 ):
@@ -278,7 +278,7 @@ async def get_batch_result(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/stream-live/{stream_id}")
-async def stream_live(websocket: WebSocket, stream_id: str, stream_url: str = None, confidence: float = 0.25):
+async def stream_live(websocket: WebSocket, stream_id: str, stream_url: str = None, confidence: float = 0.1):
     """
     WebSocket을 통한 실시간 스트리밍 도로 파손 분석
     
@@ -373,7 +373,7 @@ async def stream_live(websocket: WebSocket, stream_id: str, stream_url: str = No
 @router.post("/analyze-stream", response_model=DetectionResponse)
 async def analyze_stream(
     stream_url: str = Form(..., description="실시간 스트리밍 URL(HLS)"),
-    confidence: float = Form(0.25),
+    confidence: float = Form(0.1),
     include_image: bool = Form(True),
     location_lat: Optional[float] = Form(None, description="위도 정보"),
     location_lng: Optional[float] = Form(None, description="경도 정보"),
@@ -481,3 +481,103 @@ async def stream_processed_video(
         generate_frames(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+@router.post("/extract-background")
+async def extract_background_from_video(
+    file: UploadFile = File(...),
+    grid_width: int = Form(6, description="가로 구역 수"),
+    grid_height: int = Form(4, description="세로 구역 수"),
+    sample_interval: int = Form(1, description="몇 프레임마다 샘플링할지 (1=모든프레임)"),
+    duration_seconds: int = Form(20, description="분석할 영상 길이(초)"),
+    include_result_image: bool = Form(True, description="결과 이미지를 Base64로 포함할지 여부"),
+    include_process_steps: bool = Form(False, description="과정 단계별 이미지 포함 여부 (발표용)")
+):
+    """
+    CCTV 영상에서 차량 없는 배경 도로 이미지 추출
+    
+    각 구역에서 가장 많이 노출된 픽셀값을 사용하여 
+    움직이는 객체(차량 등)가 제거된 깨끗한 배경 이미지를 생성합니다.
+    
+    - **file**: 분석할 CCTV 영상 파일 (MP4 등)
+    - **grid_width**: 가로 구역 분할 수 (기본값: 6)
+    - **grid_height**: 세로 구역 분할 수 (기본값: 4) 
+    - **sample_interval**: 프레임 샘플링 간격 (기본값: 1)
+    - **duration_seconds**: 분석할 영상 길이 (기본값: 20초)
+    - **include_result_image**: 결과 이미지 Base64 포함 여부
+    - **include_process_steps**: 과정 단계별 이미지 포함 여부 (발표용)
+    
+    Returns:
+        JSON: 배경 추출 결과 및 이미지 (과정 단계 포함 가능)
+    """
+    try:
+        # 임시 파일 저장
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, file.filename)
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 배경 추출 수행
+        service = get_detection_service()
+        result = await service.extract_background_image(
+            video_path=temp_path,
+            grid_width=grid_width,
+            grid_height=grid_height,
+            sample_interval=sample_interval,
+            duration_seconds=duration_seconds,
+            include_result_image=include_result_image,
+            include_process_steps=include_process_steps
+        )
+        
+        # 임시 파일 정리
+        shutil.rmtree(temp_dir)
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        # 오류 발생 시 임시 파일 정리
+        if 'temp_dir' in locals():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"배경 추출 중 오류 발생: {str(e)}")
+
+@router.post("/extract-background-stream")
+async def extract_background_from_stream(
+    stream_url: str = Form(..., description="HLS 또는 RTSP 스트리밍 URL"),
+    grid_width: int = Form(6, description="가로 구역 수"),
+    grid_height: int = Form(4, description="세로 구역 수"), 
+    sample_interval: int = Form(1, description="몇 프레임마다 샘플링할지"),
+    duration_seconds: int = Form(20, description="분석할 스트림 길이(초)"),
+    include_result_image: bool = Form(True, description="결과 이미지를 Base64로 포함할지 여부")
+):
+    """
+    실시간 스트리밍에서 차량 없는 배경 도로 이미지 추출
+    
+    HLS나 RTSP 스트리밍에서 실시간으로 배경 이미지를 추출합니다.
+    추후 확장성을 위한 엔드포인트입니다.
+    
+    - **stream_url**: HLS 또는 RTSP 스트리밍 URL
+    - **grid_width**: 가로 구역 분할 수 (기본값: 6)
+    - **grid_height**: 세로 구역 분할 수 (기본값: 4)
+    - **sample_interval**: 프레임 샘플링 간격 (기본값: 1)
+    - **duration_seconds**: 분석할 스트림 길이 (기본값: 20초)
+    - **include_result_image**: 결과 이미지 Base64 포함 여부
+    
+    Returns:
+        JSON: 배경 추출 결과 및 이미지
+    """
+    try:
+        # 스트리밍 배경 추출 수행
+        service = get_detection_service()
+        result = await service.extract_background_from_stream(
+            stream_url=stream_url,
+            grid_width=grid_width,
+            grid_height=grid_height,
+            sample_interval=sample_interval,
+            duration_seconds=duration_seconds,
+            include_result_image=include_result_image
+        )
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"스트림 배경 추출 중 오류 발생: {str(e)}")

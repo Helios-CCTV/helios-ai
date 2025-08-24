@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>도로 파손 탐지 스트리밍 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .stream-container {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .stream-box {
+            flex: 1;
+            min-width: 300px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .stream-title {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #444;
+        }
+        img, .websocket-stream {
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .logs {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 100px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .connected {
+            color: green;
+        }
+        .disconnected {
+            color: red;
+        }
+        .result-tabs {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 5px;
+        }
+        .tab-btn {
+            background-color: #f0f0f0;
+            color: #333;
+            border: 1px solid #ccc;
+            padding: 8px 15px;
+            cursor: pointer;
+            border-radius: 4px 4px 0 0;
+            font-size: 12px;
+        }
+        .tab-btn.active {
+            background-color: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        .tab-btn:hover {
+            background-color: #e0e0e0;
+        }
+        .tab-btn.active:hover {
+            background-color: #45a049;
+        }
+        .result-container {
+            position: relative;
+            min-height: 200px;
+        }
+        .result-image {
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .result-image.active {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>도로 파손 탐지 스트리밍 테스트</h1>
+        
+        <div class="stream-container">
+            <div class="stream-box">
+                <h2 class="stream-title">WebSocket 스트리밍</h2>
+                <img id="websocket-stream" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAYAAACZBDirAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAP+SURBVHhe7dWhbQRBAETRzSQYmqVRGCEZURI0S2M0wuZw7xXgJfOkd+bP9+ddAQECjQTeDUCAAIFvASMgQKCWgADWrtvgBAQEYAMECNQSEMDadRucgIAAbAAAv3/f+0MBAgSGCfgJPGxhxiHwKiCArwreTYDAMAEBHLYw4xB4FRDAVwXvJkBgmIAADluYcQi8CgjgZ8HF33NeBTxB4B8BAfw0cN3O8/w8rvvj+Dyd59mV8v2R3tP/j4T/AgRuCwjgTbI/F66LdC7Dddx8jy8QIDBaQAA/K3fdd73nL9f9Pv7WHo9D7vFxm0Lfo1/vxvtHQAA/54Drcl2Xat9zBB5f7kfgm+/wBQK/ICAAn5W+L9T7At2X637pvjJ978fB+Gfp8TiE7svV93iCwDABAfys3HHZ7stzX75xgXuMY0YCPyIggJ8CbkOAQEJAABN1zEyAQFtAANsF2J8AgYSAACbqmJkAgbaAALYLsD8BAgkBAUzUMTMBAm0BAWwXYH8CBBICApio8zLzeZxteXMQGCYggMM+kHEIENgEBLBdgF0JEEgICGCijpkJEGgLCGC7APsTIJAQEMBEHTMTINAWEMB2AfYnQCAhIICJOmYmQKAtIIDtAuxPgEBCQAATdcxMgEBbQADbBdifAIGEgAAm6piZAIG2gAC2C7A/AQIJAQGcUcfvjWaUMeu3BATN+C7ACTMu0gmTztxRAGfubcJkAjhhUpk7CuDMvU2YTAAnTCpzRwGcubcJkwnghEll7iiAM/c2YTIBnDCpzR0FcObeJkwmgBMmlbmjAM7c24TJBHDCpDJ3FMCZe5swmQBOmFTmjgI4c28TJhPACZPK3FEAZ+5twmQCOGFSmTsK4My9TZhMACdMKnNHAZy5twmTCeCESWXuKOAz9zZhMgGcMKnMHQVw5n4mTCaAEyaVuaMAztzbtMkWLyrz5/O63q9rPRbP6/Lx+rLz0c19n8d5HnfxuYyPz/PJ63a/r9vrXnk3/nt5t/W87uu8not7bL/nQ9+3r+/v2K5c7Fv9dz4EfkFAAH9h6Wu/8n1RrgvzcXE+Fr79Mr2/vl/O7TI9Lo/X7/b6qffrIwB/RPwcLCCAgxdnNAK/LSAAv71/3ydwsIAAHrw8oxH4bQEB/G39+z6BgwUE8ODlGY3AbwsI4G/v3/cJHCwggAcvz2gEflvgQwDXf+b+dvS+T4DArwncAewXPgG/LE6AwG8L3AG87vvnN0//HcdxHvf9/P7zre/lUn3nM94DAgReBe4A3bfy9V3eTYDAsYJ/Aggcy/BbFwIAAAAASUVORK5CYII=" alt="WebSocket 스트림">
+                <div class="controls">
+                    <input type="text" id="ws-url" placeholder="스트림 URL 입력 (RTSP, HLS 등)">
+                    <button id="ws-connect">연결</button>
+                    <button id="ws-disconnect">연결 끊기</button>
+                </div>
+                <div id="ws-status" class="status disconnected">연결 끊김</div>
+                <div id="ws-logs" class="logs"></div>
+            </div>
+            
+            <div class="stream-box">
+                <h2 class="stream-title">MJPEG 스트리밍</h2>
+                <div>
+                    <img id="mjpeg-stream" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAYAAACZBDirAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAP+SURBVHhe7dWhbQRBAETRzSQYmqVRGCEZURI0S2M0wuZw7xXgJfOkd+bP9+ddAQECjQTeDUCAAIFvASMgQKCWgADWrtvgBAQEYAMECNQSEMDadRucgIAAbAAAv3/f+0MBAgSGCfgJPGxhxiHwKiCArwreTYDAMAEBHLYw4xB4FRDAVwXvJkBgmIAADluYcQi8CgjgZ8HF33NeBTxB4B8BAfw0cN3O8/w8rvvj+Dyd59mV8v2R3tP/j4T/AgRuCwjgTbI/F66LdC7Dddx8jy8QIDBaQAA/K3fdd73nL9f9Pv7WHo9D7vFxm0Lfo1/vxvtHQAA/54Drcl2Xat9zBB5f7kfgm+/wBQK/ICAAn5W+L9T7At2X637pvjJ978fB+Gfp8TiE7svV93iCwDABAfys3HHZ7stzX75xgXuMY0YCPyIggJ8CbkOAQEJAABN1zEyAQFtAANsF2J8AgYSAACbqmJkAgbaAALYLsD8BAgkBAUzUMTMBAm0BAWwXYH8CBBICApio8zLzeZxteXMQGCYggMM+kHEIENgEBLBdgF0JEEgICGCijpkJEGgLCGC7APsTIJAQEMBEHTMTINAWEMB2AfYnQCAhIICJOmYmQKAtIIDtAuxPgEBCQAATdcxMgEBbQADbBdifAIGEgAAm6piZAIG2gAC2C7A/AQIJAQGcUcfvjWaUMeu3BATN+C7ACTMu0gmTztxRAGfubcJkAjhhUpk7CuDMvU2YTAAnTCpzRwGcubcJkwnghEll7iiAM/c2YTIBnDCpzR0FcObeJkwmgBMmlbmjAM7c24TJBHDCpDJ3FMCZe5swmQBOmFTmjgI4c28TJhPACZPK3FEAZ+5twmQCOGFSmTsK4My9TZhMACdMKnNHAZy5twmTCeCESWXuKOAz9zZhMgGcMKnMHQVw5n4mTCaAEyaVuaAAztzbtMkWLyrz5/O63q9rPRbP6/Lx+rLz0c19n8d5HnfxuYyPz/PJ63a/r9vrXnk3/nt5t/W87uu8not7bL/nQ9+3r+/v2K5c7Fv9dz4EfkFAAH9h6Wu/8n1RrgvzcXE+Fr79Mr2/vl/O7TI9Lo/X7/b6qffrIwB/RPwcLCCAgxdnNAK/LSAAv71/3ydwsIAAHrw8oxH4bQEB/G39+z6BgwUE8ODlGY3AbwsI4G/v3/cJHCwggAcvz2gEflvgQwDXf+b+dvS+T4DArwncAewXPgG/LE6AwG8L3AG87vvnN0//HcdxHvf9/P7zre/lUn3nM94DAgReBe4A3bfy9V3eTYDAsYJ/Aggcy/BbFwIAAAAASUVORK5CYII=" alt="MJPEG 스트림">
+                </div>
+                <div class="controls">
+                    <input type="text" id="mjpeg-url" placeholder="스트림 URL 입력 (RTSP, HLS 등)">
+                    <button id="mjpeg-start">시작</button>
+                    <button id="mjpeg-stop">중지</button>
+                </div>
+                <div id="mjpeg-status" class="status disconnected">연결 끊김</div>
+            </div>
+            
+            <div class="stream-box">
+                <h2 class="stream-title">배경 추출 (차량 제거)</h2>
+                
+                <!-- 결과 이미지들을 탭으로 표시 -->
+                <div class="result-tabs">
+                    <button class="tab-btn active" data-tab="final">최종 결과</button>
+                    <button class="tab-btn" data-tab="grid">그리드 과정</button>
+                    <button class="tab-btn" data-tab="overlay">구역 분할</button>
+                </div>
+                
+                <div class="result-container">
+                    <img id="final-result" class="result-image active" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAYAAACZBDirAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAP+SURBVHhe7dWhbQRBAETRzSQYmqVRGCEZURI0S2M0wuZw7xXgJfMkd+bP9+ddAQECjQTeDUCAAIFvASMgQKCWgADWrtvgBAQEYAMECNQSEMDadRucgIAAbAAAv3/f+0MBAgSGCfgJPGxhxiHwKiCArwreTYDAMAEBHLYw4xB4FRDAVwXvJkBgmIAADluYcQi8CgjgZ8HF33NeBTxB4B8BAfw0cN3O8/w8rvvj+Dyd59mV8v2R3tP/j4T/AgRuCwjgTbI/F66LdC7Dddx8jy8QIDBaQAA/K3fdd73nL9f9Pv7WHo9D7vFxm0Lfo1/vxvtHQAA/54Drcl2Xat9zBB5f7kfgm+/wBQK/ICAAn5W+L9T7At2X637pvjJ978fB+Gfp8TiE7svV93iCwDABAfys3HHZ7stzX75xgXuMY0YCPyIggJ8CbkOAQEJAABN1zEyAQFtAANsF2J8AgYSAACbqmJkAgbaAALYLsD8BAgkBAUzUMTMBAm0BAWwXYH8CBBICApio8zLzeZxteXMQGCYggMM+kHEIENgEBLBdgF0JEEgICGCijpkJEGgLCGC7APsTIJAQEMBEHTMTINAWEMB2AfYnQCAhIICJOmYmQKAtIIDtAuxPgEBCQAATdcxMgEBbQADbBdifAIGEgAAm6piZAIG2gAC2C7A/AQIJAQGcUcfvjWaUMeu3BATN+C7ACTMu0gmTztxRAGfubcJkAjhhUpk7CuDMvU2YTAAnTCpzRwGcubcJkwnghEll7iiAM/c2YTIBnDCpzR0FcObeJkwmgBMmlbmjAM7c24TJBHDCpDJ3FMCZe5swmQBOmFTmjgI4c28TJhPACZPK3FEAZ+5twmQCOGFSmTsK4My9TZhMACdMKnNHAZy5twmTCeCESWXuKOAz9zZhMgEcMKnMHQVw5n4mTCaAEyaVuaAAztzbtMkWLyrz5/O63q9rPRbP6/Lx+rLz0c19n8d5HnfxuYyPz/PJ63a/r9vrXnk3/nt5t/W87uu8not7bL/nQ9+3r+/v2K5c7Fv9dz4EfkFAAH9h6Wu/8n1RrgvzcXE+Fr79Mr2/vl/O7TI9Lo/X7/b6qffrIwB/RPwcLCCAgxdnNAK/LSAAv71/3ydwsIAAHrw8oxH4bQEB/G39+z6BgwUE8ODlGY3AbwsI4G/v3/cJHCwggAcvz2gEflvgQwDXf+b+dvS+T4DArwncAewXPgG/LE6AwG8L3AG87vvnN0//HcdxHvf9/P7zre/lUn3nM94DAgReBe4A3bfy9V3eTYDAsYJ/Aggcy/BbFwIAAAAASUVORK5CYII=" alt="최종 배경 결과">
+                    <img id="grid-result" class="result-image" src="" alt="그리드 과정" style="display: none;">
+                    <img id="overlay-result" class="result-image" src="" alt="구역 분할" style="display: none;">
+                </div>
+                
+                <div class="controls">
+                    <input type="file" id="video-file" accept="video/*" style="margin-bottom: 10px; width: 100%;">
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" id="duration-input" placeholder="분석 시간(초)" value="20" min="5" max="60" style="width: 120px;">
+                        <button id="extract-bg">배경 추출</button>
+                    </div>
+                </div>
+                <div id="bg-status" class="status disconnected">대기 중</div>
+                <div id="bg-logs" class="logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket 스트리밍 관련 코드
+        let socket = null;
+        const wsStreamImg = document.getElementById('websocket-stream');
+        const wsUrlInput = document.getElementById('ws-url');
+        const wsConnectBtn = document.getElementById('ws-connect');
+        const wsDisconnectBtn = document.getElementById('ws-disconnect');
+        const wsStatus = document.getElementById('ws-status');
+        const wsLogs = document.getElementById('ws-logs');
+
+        wsConnectBtn.addEventListener('click', () => {
+            // 이전 연결이 있으면 정리
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+            
+            const streamUrl = wsUrlInput.value.trim();
+            if (!streamUrl) {
+                addLog('스트림 URL을 입력하세요.');
+                return;
+            }
+            
+            addLog('연결 시작...');
+
+            try {
+                // WebSocket 연결 URL 로깅
+                const wsUrl = `ws://127.0.0.1:8000/api/v1/damage-detection/stream-live/test-stream`;
+                addLog(`WebSocket 연결 시도: ${wsUrl}`);
+                console.log('WebSocket 연결 URL:', wsUrl);
+                
+                // WebSocket 연결
+                socket = new WebSocket(wsUrl);
+
+                socket.onopen = () => {
+                    wsStatus.textContent = '연결됨';
+                    wsStatus.className = 'status connected';
+                    addLog('WebSocket 연결 성공');
+
+                    // 스트림 URL 전송
+                    const message = JSON.stringify({
+                        stream_url: streamUrl,
+                        confidence: 0.05
+                    });
+                    socket.send(message);
+                    addLog(`메시지 전송: ${streamUrl}`);
+                };
+
+                socket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.error) {
+                            addLog(`오류: ${data.error}`);
+                            return;
+                        }
+
+                        if (data.frame) {
+                            wsStreamImg.src = `data:image/jpeg;base64,${data.frame}`;
+                            addLog(`프레임 수신: 파손 ${data.damage_count}개 탐지`);
+                        }
+                    } catch (error) {
+                        addLog(`메시지 처리 오류: ${error.message}`);
+                        console.error('Message parsing error:', error, event.data);
+                    }
+                };
+
+                socket.onclose = () => {
+                    wsStatus.textContent = '연결 끊김';
+                    wsStatus.className = 'status disconnected';
+                    addLog('WebSocket 연결 종료');
+                    socket = null;
+                };
+
+                socket.onerror = (event) => {
+                    addLog(`WebSocket 오류 발생`);
+                    console.error('WebSocket error:', event);
+                    wsStatus.textContent = '오류';
+                    wsStatus.className = 'status disconnected';
+                };
+            } catch (error) {
+                addLog(`오류: ${error.message}`);
+            }
+        });
+
+        wsDisconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+                socket = null;
+                wsStatus.textContent = '연결 끊김';
+                wsStatus.className = 'status disconnected';
+                addLog('WebSocket 연결 종료');
+            }
+        });
+
+        function addLog(message) {
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            wsLogs.appendChild(logEntry);
+            wsLogs.scrollTop = wsLogs.scrollHeight;
+        }
+
+        // MJPEG 스트리밍 관련 코드
+        const mjpegImg = document.getElementById('mjpeg-stream');
+        const mjpegUrlInput = document.getElementById('mjpeg-url');
+        const mjpegStartBtn = document.getElementById('mjpeg-start');
+        const mjpegStopBtn = document.getElementById('mjpeg-stop');
+        const mjpegStatus = document.getElementById('mjpeg-status');
+
+        mjpegStartBtn.addEventListener('click', () => {
+            const streamUrl = mjpegUrlInput.value.trim();
+            if (!streamUrl) {
+                alert('스트림 URL을 입력하세요.');
+                return;
+            }
+
+            // MJPEG 스트림 시작
+            const apiUrl = `http://127.0.0.1:8000/api/v1/damage-detection/stream-video?stream_url=${encodeURIComponent(streamUrl)}&confidence=0.05&fps=10`;
+            mjpegImg.src = apiUrl;
+            mjpegStatus.textContent = '연결됨';
+            mjpegStatus.className = 'status connected';
+        });
+
+        mjpegStopBtn.addEventListener('click', () => {
+            mjpegImg.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAYAAACZBDirAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAP+SURBVHhe7dWhbQRBAETRzSQYmqVRGCEZURI0S2M0wuZw7xXgJfMkd+bP9+ddAQECjQTeDUCAAIFvASMgQKCWgADWrtvgBAQEYAMECNQSEMDadRucgIAAbAAAv3/f+0MBAgSGCfgJPGxhxiHwKiCArwreTYDAMAEBHLYw4xB4FRDAVwXvJkBgmIAADluYcQi8CgjgZ8HF33NeBTxB4B8BAfw0cN3O8/w8rvvj+Dyd59mV8v2R3tP/j4T/AgRuCwjgTbI/F66LdC7Dddx8jy8QIDBaQAA/K3fdd73nL9f9Pv7WHo9D7vFxm0Lfo1/vxvtHQAA/54Drcl2Xat9zBB5f7kfgm+/wBQK/ICAAn5W+L9T7At2X637pvjJ978fB+Gfp8TiE7svV93iCwDABAfys3HHZ7stzX75xgXuMY0YCPyIggJ8CbkOAQEJAABN1zEyAQFtAANsF2J8AgYSAACbqmJkAgbaAALYLsD8BAgkBAUzUMTMBAm0BAWwXYH8CBBICApio8zLzeZxteXMQGCYggMM+kHEIENgEBLBdgF0JEEgICGCijpkJEGgLCGC7APsTIJAQEMBEHTMTINAWEMB2AfYnQCAhIICJOmYmQKAtIIDtAuxPgEBCQAATdcxMgEBbQADbBdifAIGEgAAm6piZAIG2gAC2C7A/AQIJAQGcUcfvjWaUMeu3BATN+C7ACTMu0gmTztxRAGfubcJkAjhhUpk7CuDMvU2YTAAnTCpzRwGcubcJkwnghEll7iiAM/c2YTIBnDCpzR0FcObeJkwmgBMmlbmjAM7c24TJBHDCpDJ3FMCZe5swmQBOmFTmjgI4c28TJhPACZPK3FEAZ+5twmQCOGFSmTsK4My9TZhMACdMKnNHAZy5twmTCeCESWXuKOAz9zZhMgEcMKnMHQVw5n4mTCaAEyaVuaAAztzbtMkWLyrz5/O63q9rPRbP6/Lx+rLz0c19n8d5HnfxuYyPz/PJ63a/r9vrXnk3/nt5t/W87uu8not7bL/nQ9+3r+/v2K5c7Fv9dz4EfkFAAH9h6Wu/8n1RrgvzcXE+Fr79Mr2/vl/O7TI9Lo/X7/b6qffrIwB/RPwcLCCAgxdnNAK/LSAAv71/3ydwsIAAHrw8oxH4bQEB/G39+z6BgwUE8ODlGY3AbwsI4G/v3/cJHCwggAcvz2gEflvgQwDXf+b+dvS+T4DArwncAewXPgG/LE6AwG8L3AG87vvnN0//HcdxHvf9/P7zre/lUn3nM94DAgReBe4A3bfy9V3eTYDAsYJ/Aggcy/BbFwIAAAAASUVORK5CYII=";
+            mjpegStatus.textContent = '연결 끊김';
+            mjpegStatus.className = 'status disconnected';
+        });
+
+        // 배경 추출 관련 코드
+        const finalResultImg = document.getElementById('final-result');
+        const gridResultImg = document.getElementById('grid-result');
+        const overlayResultImg = document.getElementById('overlay-result');
+        const videoFileInput = document.getElementById('video-file');
+        const durationInput = document.getElementById('duration-input');
+        const extractBgBtn = document.getElementById('extract-bg');
+        const bgStatus = document.getElementById('bg-status');
+        const bgLogs = document.getElementById('bg-logs');
+
+        // 탭 기능 추가
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const resultImages = document.querySelectorAll('.result-image');
+        
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // 모든 탭 비활성화
+                tabBtns.forEach(b => b.classList.remove('active'));
+                resultImages.forEach(img => {
+                    img.style.display = 'none';
+                    img.classList.remove('active');
+                });
+                
+                // 선택된 탭 활성화
+                btn.classList.add('active');
+                const tabName = btn.getAttribute('data-tab');
+                const targetImg = document.getElementById(`${tabName}-result`);
+                if (targetImg) {
+                    targetImg.style.display = 'block';
+                    targetImg.classList.add('active');
+                }
+            });
+        });
+
+        function addBgLog(message) {
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            bgLogs.appendChild(logEntry);
+            bgLogs.scrollTop = bgLogs.scrollHeight;
+        }
+
+        extractBgBtn.addEventListener('click', async () => {
+            const file = videoFileInput.files[0];
+            const duration = parseInt(durationInput.value) || 20;
+            
+            if (!file) {
+                addBgLog('비디오 파일을 선택하세요.');
+                return;
+            }
+
+            if (duration < 5 || duration > 60) {
+                addBgLog('분석 시간은 5-60초 사이로 설정하세요.');
+                return;
+            }
+
+            bgStatus.textContent = '처리 중...';
+            bgStatus.className = 'status connected';
+            addBgLog(`배경 추출 시작: ${file.name} (${duration}초)`);
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('grid_width', '6');
+                formData.append('grid_height', '4');
+                formData.append('sample_interval', '1');
+                formData.append('duration_seconds', duration.toString());
+                formData.append('include_result_image', 'true');
+
+                const response = await fetch('/api/v1/damage-detection/extract-background', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 세 가지 결과 이미지 설정
+                    finalResultImg.src = `data:image/jpeg;base64,${result.background_image}`;
+                    if (result.background_with_grid) {
+                        gridResultImg.src = `data:image/jpeg;base64,${result.background_with_grid}`;
+                    }
+                    if (result.grid_overlay) {
+                        overlayResultImg.src = `data:image/jpeg;base64,${result.grid_overlay}`;
+                    }
+                    
+                    bgStatus.textContent = '완료';
+                    bgStatus.className = 'status connected';
+                    addBgLog(`처리 완료: ${result.processed_frames}/${result.total_frames} 프레임`);
+                    addBgLog(`저장 위치: ${result.saved_path}`);
+                    addBgLog(`처리 시간: ${result.video_info.duration_seconds}초 영상`);
+                    addBgLog('탭을 클릭하여 다양한 결과를 확인하세요.');
+                } else {
+                    throw new Error(result.error || '알 수 없는 오류');
+                }
+
+            } catch (error) {
+                bgStatus.textContent = '오류';
+                bgStatus.className = 'status disconnected';
+                addBgLog(`오류 발생: ${error.message}`);
+                console.error('배경 추출 오류:', error);
+            }
+        });
+    </script>
+</body>
+</html>
