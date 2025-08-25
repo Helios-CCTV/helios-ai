@@ -4,14 +4,18 @@ FROM python:3.9-slim as base
 # 시스템 패키지 업데이트 및 필수 도구 설치
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    libgl1-mesa-dev \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libgtk-3-0 \
     wget \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 작업 디렉토리 설정
@@ -40,8 +44,12 @@ COPY --from=dependencies /usr/local/bin /usr/local/bin
 # 애플리케이션 코드 복사
 COPY . .
 
-# 권한 설정
-RUN chmod +x main.py
+# 비root 사용자 생성
+RUN useradd -m -u 1000 appuser
+
+# models 디렉토리 생성 및 권한 설정
+RUN mkdir -p /app/models /app/results /app/data && \
+    chown -R appuser:appuser /app
 
 # 포트 노출
 EXPOSE 8000
@@ -54,8 +62,7 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 비root 사용자 생성 및 전환
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# 사용자 전환
 USER appuser
 
 # 애플리케이션 시작
