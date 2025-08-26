@@ -62,7 +62,7 @@ pipeline {
                     def baseImageName = "${BASE_IMAGE}:latest"
                     
                     sh """
-                        docker build -f Dockerfile.base -t ${baseImageName} .
+                        docker build --no-cache -f Dockerfile.base -t ${baseImageName} .
                         docker tag ${baseImageName} ${DOCKER_REGISTRY}/${baseImageName}
                     """
                     

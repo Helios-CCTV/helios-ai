@@ -38,7 +38,7 @@ fi
 
 # 베이스 이미지 빌드
 log_info "베이스 이미지 빌드 중..."
-if docker build -f Dockerfile.base -t "${BASE_IMAGE_NAME}:${BASE_TAG}" .; then
+if docker build --no-cache -f Dockerfile.base -t "${BASE_IMAGE_NAME}:${BASE_TAG}" .; then
     log_info "✅ 베이스 이미지 빌드 성공!"
 else
     log_error "❌ 베이스 이미지 빌드 실패!"

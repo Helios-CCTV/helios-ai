@@ -1,50 +1,50 @@
-# Helios AI 베이스 이미지 - 의존성만 포함
-FROM python:3.11-slim AS base
+# Helios AI 베이스 이미지 - 의존성만 포함 (GUI 패키지 제거)
+FROM python:3.11-slim
 
-# 시스템 의존성 설치 (OpenCV, PyTorch, MySQL 등에 필요)
+# 환경변수 설정
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 시스템 의존성 설치 (최소한의 패키지만)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # 빌드 도구
     build-essential \
     gcc \
     g++ \
     pkg-config \
-    # OpenCV 의존성
-    libgl1-mesa-glx \
+    # 기본 라이브러리
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     libgomp1 \
-    libgstreamer1.0-0 \
-    libgstreamer-plugins-base1.0-0 \
-    libgtk-3-0 \
+    # FFmpeg (동영상 처리용)
+    ffmpeg \
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
-    libv4l-dev \
-    libxvidcore-dev \
-    libx264-dev \
-    # FFmpeg (동영상 처리)
-    ffmpeg \
     # MySQL 클라이언트 의존성
     default-libmysqlclient-dev \
-    # 기타 필수 패키지
+    # 네트워크 및 유틸리티
     curl \
     wget \
-    # JPEG, PNG 라이브러리 (Pillow용)
+    # 이미지 처리 라이브러리 (Pillow용)
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
+    zlib1g-dev \
     # 암호화 라이브러리 (python-jose용)
     libffi-dev \
     libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    # 기타 필수
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # 작업 디렉토리 설정
 WORKDIR /app
 
 # pip 업그레이드
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip setuptools wheel
 
 # requirements.txt 복사 및 의존성 설치
 COPY requirements.txt .
