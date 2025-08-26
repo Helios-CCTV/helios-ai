@@ -1,0 +1,66 @@
+# Helios AI 베이스 이미지 - 의존성만 포함
+FROM python:3.11-slim AS base
+
+# 시스템 의존성 설치 (OpenCV, PyTorch, MySQL 등에 필요)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 빌드 도구
+    build-essential \
+    gcc \
+    g++ \
+    pkg-config \
+    # OpenCV 의존성
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libgtk-3-0 \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    # FFmpeg (동영상 처리)
+    ffmpeg \
+    # MySQL 클라이언트 의존성
+    default-libmysqlclient-dev \
+    # 기타 필수 패키지
+    curl \
+    wget \
+    # JPEG, PNG 라이브러리 (Pillow용)
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    # 암호화 라이브러리 (python-jose용)
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# pip 업그레이드
+RUN pip install --upgrade pip
+
+# requirements.txt 복사 및 의존성 설치
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# YOLO 모델 캐시 디렉토리 생성 (ultralytics용)
+RUN mkdir -p /root/.cache/torch/hub
+
+# 환경 변수 설정
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV OPENCV_LOG_LEVEL=ERROR
+
+# 베이스 이미지에는 애플리케이션 코드를 포함하지 않음
+# 이 이미지는 의존성만 설치된 상태로 유지
+
+LABEL maintainer="Helios CCTV Team"
+LABEL description="Helios AI Base Image with all dependencies"
+LABEL version="1.0"

@@ -1,69 +1,58 @@
-# 멀티스테이지 빌드를 위한 베이스 이미지
-FROM python:3.9-slim as base
+# ---------- builder: 의존성 설치 ----------
+FROM python:3.11-slim AS builder
 
-# 시스템 패키지 업데이트 및 필수 도구 설치
-RUN apt-get update && apt-get install -y \
+# 빌드에 필요한 OS 패키지 (컴파일러 등)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgl1-mesa-dev \
-    libgstreamer1.0-0 \
-    libgstreamer-plugins-base1.0-0 \
-    libgtk-3-0 \
-    wget \
     curl \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# 작업 디렉토리 설정
 WORKDIR /app
 
-# Python 의존성 설치를 위한 단계
-FROM base as dependencies
+# venv 생성 (site-packages를 깔끔하게 묶기 위함)
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# pip 업그레이드
-RUN pip install --upgrade pip
-
-# requirements.txt 복사 및 의존성 설치
+# requirements만 먼저 복사 → 캐시 최대로 활용
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# YOLO 모델 다운로드 (선택사항 - 필요시 활성화)
-# RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
-
-# 최종 프로덕션 이미지
-FROM base as production
-
-# 의존성 복사
-COPY --from=dependencies /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
-COPY --from=dependencies /usr/local/bin /usr/local/bin
-
-# 애플리케이션 코드 복사
+# 소스 복사
 COPY . .
 
-# 비root 사용자 생성
-RUN useradd -m -u 1000 appuser
+# (필요 시) 모델/데이터는 빌드 타임에 받지 말고 런타임/볼륨으로
 
-# models 디렉토리 생성 및 권한 설정
-RUN mkdir -p /app/models /app/results /app/data && \
-    chown -R appuser:appuser /app
 
-# 포트 노출
-EXPOSE 8000
+# ---------- production: 런타임만 ----------
+FROM python:3.11-slim AS production
 
-# 환경 변수 설정
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
+# 런타임에 필요한 OS 라이브러리만 (GUI/FFmpeg 등 꼭 필요한 것만)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 libgl1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# 헬스체크 추가
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+WORKDIR /app
 
-# 사용자 전환
+# builder의 가상환경만 복사 (훨씬 작고 깔끔)
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
+
+# 앱 코드만 복사
+COPY . .
+
+# 비루트 사용자
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# 애플리케이션 시작
+EXPOSE 8000
+
+# 헬스체크 (curl 필요시 이미지에 추가 설치하거나 python 요청으로 대체)
+# HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+#   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
