@@ -65,7 +65,12 @@ import torch
 import cv2
 import numpy as np
 import mysql.connector
-print('✅ 모든 패키지 import 성공!')
+try:
+    import ultralytics
+    print('✅ ultralytics 패키지 포함!')
+except ImportError:
+    print('⚠️  ultralytics 패키지 없음 (선택사항)')
+print('✅ 필수 패키지 import 성공!')
 "; then
     log_info "✅ 베이스 이미지 테스트 성공!"
 else
