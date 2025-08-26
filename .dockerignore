@@ -70,3 +70,26 @@ Thumbs.db
 docker-compose.override.yml
 .env.local
 .env.development
+
+# 모델/데이터/영상
+*.pt
+*.pth
+*.onnx
+*.h5
+models/
+checkpoints/
+weights/
+data/
+datasets/
+videos/
+*.mp4
+*.avi
+*.mkv
+
+# 캐시
+__pycache__/
+*.pickle
+*.pkl
+.cache/
+.wheels/
+pip-wheel-metadata/
