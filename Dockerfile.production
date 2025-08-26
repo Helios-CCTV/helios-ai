@@ -1,0 +1,28 @@
+# Helios AI 프로덕션 이미지 - 베이스 이미지 사용
+# 먼저 베이스 이미지를 빌드해야 합니다: docker build -f Dockerfile.base -t helios-ai-base:latest .
+
+FROM helios-ai-base:latest
+
+# 작업 디렉토리는 베이스 이미지에서 이미 설정됨
+WORKDIR /app
+
+# 애플리케이션 코드만 복사
+COPY . .
+
+# 비루트 사용자 생성 및 권한 설정
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/models /app/results /app/logs && \
+    chown -R appuser:appuser /app
+
+# 사용자 전환
+USER appuser
+
+# 포트 노출
+EXPOSE 8000
+
+# 헬스체크 추가
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# 애플리케이션 시작
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
