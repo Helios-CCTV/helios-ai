@@ -21,7 +21,3 @@ PyMySQL>=1.0.0
 shapely>=2.0.0
 python-dotenv>=1.0.0
 pandas>=1.5.0
-
-# 보안 관련 (선택사항)
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
