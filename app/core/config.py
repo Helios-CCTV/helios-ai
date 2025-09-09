@@ -9,7 +9,7 @@ class Settings:
     VERSION: str = "1.0.0"
     
     # 모델 설정
-    MODEL_PATH: str = os.getenv("MODEL_PATH", "models/CCTV_Train_07_24.pt")
+    MODEL_PATH: str = os.getenv("MODEL_PATH", "models/09-08-best-final-model.pt")
     
     # 결과 저장 경로
     RESULTS_DIR: str = os.getenv("RESULTS_DIR", "results")
