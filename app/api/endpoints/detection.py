@@ -17,7 +17,7 @@ router = APIRouter(prefix="/damage-detection", tags=["damage-detection"])
 
 # 모델 경로 설정
 MODEL_DIR = Path("models")
-MODEL_PATH = MODEL_DIR / "CCTV_Train_07_24.pt"  # 사용자 학습 모델
+MODEL_PATH = MODEL_DIR / "09-08-best-final-model.pt"  # 업데이트된 최신 모델
 
 # 서비스 인스턴스 생성
 detection_service = None
@@ -278,7 +278,7 @@ async def get_batch_result(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/stream-live/{stream_id}")
-async def stream_live(websocket: WebSocket, stream_id: str, stream_url: str = None, confidence: float = 0.1):
+async def stream_live(websocket: WebSocket, stream_id: str, stream_url: str = None, confidence: float = 0.15):
     """
     WebSocket을 통한 실시간 스트리밍 도로 파손 분석
     
