@@ -20,6 +20,7 @@ os.makedirs("results", exist_ok=True)
 os.makedirs("models", exist_ok=True)
 
 app = FastAPI(
+    root_path="/ai",
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version=settings.VERSION,
@@ -41,6 +42,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # 정적 파일 서비스
 app.mount("/results", StaticFiles(directory="results"), name="results")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -61,4 +63,4 @@ if __name__ == "__main__":
     import uvicorn
     
     logger.info(f"Starting {settings.PROJECT_NAME} version {settings.VERSION}")
-    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
+    uvicorn.run("main:app", host="10.246.246.63", port=11100, reload=True)
