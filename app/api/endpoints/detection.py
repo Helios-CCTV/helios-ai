@@ -79,6 +79,62 @@ async def analyze_road_damage(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@router.post("/simple-analyze")
+async def simple_analyze_image(file: UploadFile = File(...)):
+    """
+    간단한 이미지 분석 - 이미지만 업로드하면 바로 분석 결과 반환
+    
+    - **file**: 분석할 이미지 파일 (JPG, PNG, WebP 등)
+    
+    Returns:
+        JSON: 간단한 분석 결과
+    """
+    try:
+        # 파일 타입 검증
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
+        
+        # 이미지 읽기
+        contents = await file.read()
+        
+        # 탐지 서비스로 분석
+        service = get_detection_service()
+        result = await service.analyze_road_damage(
+            image_bytes=contents,
+            confidence=0.05,  # 낮은 임계값으로 더 많이 탐지
+            include_image=True  # 결과 이미지 포함
+        )
+        
+        # 간단한 응답 형태로 변환
+        if result.get("success"):
+            simple_result = {
+                "status": "success",
+                "message": f"분석 완료! {result.get('damage_count', 0)}개의 도로 파손/시설물이 탐지되었습니다.",
+                "detection_count": result.get("damage_count", 0),
+                "processing_time": f"{result.get('process_time', 0):.2f}초",
+                "detections": result.get("damages", []),
+                "severity_score": f"{result.get('severity_score', 0):.1f}/100점",
+                "annotated_image": result.get("result_image")  # Base64 이미지
+            }
+        else:
+            simple_result = {
+                "status": "error", 
+                "message": result.get("message", "분석에 실패했습니다."),
+                "detection_count": 0
+            }
+        
+        return JSONResponse(content=simple_result)
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"분석 중 오류가 발생했습니다: {str(e)}",
+                "detection_count": 0
+            }
+        )
+
 @router.post("/analyze-video", response_model=VideoDetectionResponse)
 async def analyze_road_damage_video(
     background_tasks: BackgroundTasks,
