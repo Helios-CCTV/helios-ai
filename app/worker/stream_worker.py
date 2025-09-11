@@ -11,9 +11,9 @@ import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 import redis.asyncio as redis
-from app.config import settings
+from app.core.config import settings
 from app.metrics import metrics
-from app.services.preprocess_adapter import get_preprocess_adapter
+from app.services.preprocess_only_adapter import get_preprocess_adapter
 from app.services.storage_swift import get_swift_uploader
 
 logger = logging.getLogger(__name__)
@@ -47,21 +47,45 @@ class StreamWorker:
             await self.redis_client.ping()
             logger.info("Redis 연결 성공")
             
-            # 컨슈머 그룹 생성 (존재하지 않는 경우)
-            try:
-                await self.redis_client.xgroup_create(
-                    settings.REDIS_STREAM,
-                    settings.REDIS_GROUP,
-                    id="$",
-                    mkstream=True
-                )
-                logger.info(f"Redis 컨슈머 그룹 생성: {settings.REDIS_GROUP}")
-            except redis.ResponseError as e:
-                if "BUSYGROUP" not in str(e):
-                    raise
-                logger.info(f"Redis 컨슈머 그룹 이미 존재: {settings.REDIS_GROUP}")
+            # 컨슈머 그룹 자동 생성/복구
+            await self._ensure_consumer_group()
         
         return self.redis_client
+    
+    async def _ensure_consumer_group(self):
+        """컨슈머 그룹 존재 확인 및 생성"""
+        try:
+            # 컨슈머 그룹 정보 확인
+            await self.redis_client.xinfo_groups(settings.REDIS_STREAM)
+            logger.info(f"Redis 컨슈머 그룹 확인 완료: {settings.REDIS_GROUP}")
+        except redis.ResponseError as e:
+            if "no such key" in str(e).lower():
+                # 스트림이 존재하지 않는 경우 생성
+                logger.info(f"Redis 스트림 생성: {settings.REDIS_STREAM}")
+                await self._create_consumer_group()
+            else:
+                logger.warning(f"컨슈머 그룹 확인 중 오류: {e}")
+                await self._create_consumer_group()
+        except Exception as e:
+            logger.warning(f"컨슈머 그룹 확인 실패: {e}")
+            await self._create_consumer_group()
+    
+    async def _create_consumer_group(self):
+        """컨슈머 그룹 생성"""
+        try:
+            await self.redis_client.xgroup_create(
+                settings.REDIS_STREAM,
+                settings.REDIS_GROUP,
+                id="$",
+                mkstream=True
+            )
+            logger.info(f"Redis 컨슈머 그룹 생성: {settings.REDIS_GROUP}")
+        except redis.ResponseError as e:
+            if "BUSYGROUP" in str(e):
+                logger.info(f"Redis 컨슈머 그룹 이미 존재: {settings.REDIS_GROUP}")
+            else:
+                logger.error(f"컨슈머 그룹 생성 실패: {e}")
+                raise
     
     async def _check_gpu_memory(self) -> bool:
         """GPU 메모리 확인 (옵션)"""
@@ -138,18 +162,52 @@ class StreamWorker:
                         # 3회 실패 시 부분 성공으로 처리하고 업로드
                         logger.warning(f"HLS 연결 지속 실패, 오류 정보만 업로드: job_id={job_id}")
                 
-                # Swift 업로드 (오류 정보라도 업로드)
-                uploader = get_swift_uploader()
-                temp_dir = result["temp_dir"]
+                # Swift 업로드 (환경변수로 제어)
+                uploaded_keys = []
+                upload_enabled = settings.SWIFT_UPLOAD_ENABLED if hasattr(settings, 'SWIFT_UPLOAD_ENABLED') else True
+                temp_dir = result.get("temp_dir")  # result에서 temp_dir 안전하게 가져오기
                 
-                # 업로드 prefix 생성
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                upload_prefix = f"{settings.SWIFT_UPLOAD_PREFIX}{cctv_id}/{job_id}/{timestamp}"
-                
-                uploaded_keys = await uploader.upload_dir_to_swift(temp_dir, upload_prefix)
+                if upload_enabled and temp_dir:
+                    try:
+                        uploader = get_swift_uploader()
+                        
+                        # 날짜별 폴더 구조: YYYY/MMDD/
+                        now = datetime.now()
+                        date_str = now.strftime("%Y/%m%d")  # 2025/0911
+                        date_only = now.strftime("%Y%m%d")   # 20250911
+                        
+                        # 개별 파일 업로드 (파일명 변경)
+                        uploaded_keys = []
+                        from pathlib import Path
+                        local_path = Path(temp_dir)
+                        
+                        for file_path in local_path.rglob('*'):
+                            if file_path.is_file():
+                                filename = file_path.name
+                                
+                                # 파일명 변경 규칙
+                                if filename == "background.jpg":
+                                    new_filename = f"{cctv_id}_{date_only}.jpg"
+                                elif filename.endswith(".json"):
+                                    # JSON 파일은 원래 이름 유지하되 앞에 CCTV ID 추가
+                                    new_filename = f"{cctv_id}_{date_only}_{filename}"
+                                else:
+                                    # 기타 파일
+                                    new_filename = f"{cctv_id}_{date_only}_{filename}"
+                                
+                                object_key = f"{date_str}/{new_filename}"
+                                uploaded_key = await uploader.upload_file(str(file_path), object_key)
+                                uploaded_keys.append(uploaded_key)
+                        
+                        logger.info(f"Swift 업로드 완료: {len(uploaded_keys)}개 파일")
+                    except Exception as e:
+                        logger.error(f"Swift 업로드 실패: {e}")
+                        # 업로드 실패해도 처리는 계속 진행
+                else:
+                    logger.info("Swift 업로드 비활성화됨 (SWIFT_UPLOAD_ENABLED=false)")
                 
                 # 임시 디렉터리 정리
-                if temp_dir:
+                if temp_dir and os.path.exists(temp_dir):
                     shutil.rmtree(temp_dir, ignore_errors=True)
                 
                 # 처리 상태에 따른 메트릭 업데이트
@@ -179,10 +237,16 @@ class StreamWorker:
                 
                 # 재시도 처리
                 attempt = int(fields.get("attempt", "0"))
+                redis_client = await self._get_redis_client()
+                
                 if attempt < settings.REDIS_MAX_RETRY:
                     await self._requeue_message(fields, attempt, str(e))
+                    # 재시도할 경우에만 XACK하지 않음 (원본 메시지는 유지)
                 else:
+                    # 최대 재시도 도달 시 DLQ로 이동하고 XACK
                     await self._move_to_dlq(fields, str(e))
+                    await redis_client.xack(settings.REDIS_STREAM, settings.REDIS_GROUP, message_id)
+                    logger.info(f"최대 재시도 도달, DLQ 이동 후 XACK: job_id={job_id}")
                     
             finally:
                 metrics.decrement("concurrency_current")
@@ -257,6 +321,20 @@ class StreamWorker:
             except asyncio.CancelledError:
                 logger.info("소비 루프 취소됨")
                 break
+            except redis.ResponseError as e:
+                if "NOGROUP" in str(e):
+                    logger.warning(f"컨슈머 그룹 없음, 재생성 시도: {e}")
+                    try:
+                        await self._ensure_consumer_group()
+                        logger.info("컨슈머 그룹 재생성 완료")
+                        continue
+                    except Exception as create_error:
+                        logger.error(f"컨슈머 그룹 재생성 실패: {create_error}")
+                        await asyncio.sleep(10)
+                        continue
+                else:
+                    logger.error(f"Redis 응답 오류: {e}")
+                    await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"소비 루프 오류: {e}")
                 await asyncio.sleep(5)  # 오류 시 잠시 대기

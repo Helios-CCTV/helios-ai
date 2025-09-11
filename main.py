@@ -6,8 +6,15 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# .env 파일 로드
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("python-dotenv not installed, using system environment variables")
+
 from app.api.api_v1.api import api_router
-from app.config import settings
+from app.core.config import settings
 from app.worker.stream_worker import get_stream_worker
 from app.metrics import metrics
 

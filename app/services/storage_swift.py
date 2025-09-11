@@ -14,13 +14,16 @@ class SwiftUploader:
     """OpenStack Swift 업로드 유틸리티"""
     
     def __init__(self, auth_url: str, username: str, password: str, 
-                 project_name: str, region_name: str, container: str):
+                 project_name: str, region_name: str, container: str,
+                 user_domain_name: str = "Default", project_domain_name: str = "Default"):
         self.auth_url = auth_url
         self.username = username
         self.password = password
         self.project_name = project_name
         self.region_name = region_name
         self.container = container
+        self.user_domain_name = user_domain_name
+        self.project_domain_name = project_domain_name
         self._client = None
     
     async def _get_client(self):
@@ -34,13 +37,29 @@ class SwiftUploader:
                     logger.error("python-swiftclient가 설치되지 않았습니다. pip install python-swiftclient로 설치하세요.")
                     raise
                 
+                # 현재 사용하는 URL 로그 출력
+                logger.info(f"Swift 클라이언트 초기화 시도: auth_url={self.auth_url}")
+                
+                # SSL 비활성화를 위한 환경변수 설정
+                os.environ['PYTHONHTTPSVERIFY'] = '0'
+                os.environ['CURL_CA_BUNDLE'] = ''
+                
                 auth_options = {
                     'auth_version': '3',
-                    'os_username': self.username,
-                    'os_password': self.password,
-                    'os_project_name': self.project_name,
-                    'os_auth_url': self.auth_url,
-                    'os_region_name': self.region_name,
+                    'user': self.username,
+                    'key': self.password,
+                    'tenant_name': self.project_name,  # tenant_name 사용
+                    'authurl': self.auth_url,
+                    'insecure': True,  # SSL 인증서 검증 무시
+                    'cacert': '',  # CA 인증서 비활성화
+                    'os_options': {
+                        'region_name': self.region_name,
+                        'user_domain_name': self.user_domain_name,
+                        'project_domain_name': self.project_domain_name,
+                        'identity_api_version': '3',
+                        'interface': 'public',
+                        'object_storage_url': 'http://116.89.191.2:8080/v1/AUTH_5ec66c4e21054d7d89b918f1fa287f24'
+                    }
                 }
                 
                 # 동기 함수를 비동기로 실행
@@ -159,7 +178,9 @@ def get_swift_uploader() -> SwiftUploader:
     global _swift_uploader
     
     if _swift_uploader is None:
-        from app.config import settings
+        from app.core.config import settings
+        
+        logger.info(f"Swift 업로더 초기화: OS_AUTH_URL={settings.OS_AUTH_URL}")
         
         # 필수 설정 확인
         required_settings = [
@@ -180,7 +201,9 @@ def get_swift_uploader() -> SwiftUploader:
             password=settings.OS_PASSWORD,
             project_name=settings.OS_PROJECT_NAME,
             region_name=settings.OS_REGION_NAME,
-            container=settings.SWIFT_CONTAINER
+            container=settings.SWIFT_CONTAINER,
+            user_domain_name=settings.OS_USER_DOMAIN_NAME,
+            project_domain_name=settings.OS_PROJECT_DOMAIN_NAME
         )
     
     return _swift_uploader

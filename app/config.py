@@ -1,6 +1,18 @@
 """
 환경변수 설정 (pydantic-settings)
 """
+import os
+from pathlib import Path
+
+# .env 파일 로드
+try:
+    from dotenv import load_dotenv
+    # 프로젝트 루트의 .env 파일 로드
+    env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(env_path)
+except ImportError:
+    print("python-dotenv not installed, using system environment variables")
+
 try:
     from pydantic_settings import BaseSettings
 except ImportError:
@@ -32,9 +44,13 @@ class Settings(BaseSettings):
     OS_USERNAME: Optional[str] = None
     OS_PASSWORD: Optional[str] = None
     OS_PROJECT_NAME: Optional[str] = None
+    OS_USER_DOMAIN_NAME: str = "Default"
+    OS_PROJECT_DOMAIN_NAME: str = "Default"
+    OS_IDENTITY_API_VERSION: str = "3"
     OS_REGION_NAME: Optional[str] = None
     SWIFT_CONTAINER: Optional[str] = None
-    SWIFT_UPLOAD_PREFIX: str = "preprocess/"
+    SWIFT_UPLOAD_PREFIX: str = ""
+    SWIFT_UPLOAD_ENABLED: bool = True
     
     # 기존 FastAPI 설정 (main.py에서 import)
     PROJECT_NAME: str = "Helios CCTV AI API"
