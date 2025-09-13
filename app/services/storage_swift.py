@@ -3,9 +3,10 @@ OpenStack Swift 업로더
 """
 import os
 import asyncio
-from typing import List
+from typing import List, Optional
 from pathlib import Path
 import logging
+import mimetypes
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,14 @@ class SwiftUploader:
         
         return self._client
     
-    async def upload_file(self, local_path: str, object_key: str) -> str:
-        """단일 파일 업로드"""
+    async def upload_file(
+        self,
+        local_path: str,
+        object_key: str,
+        content_type: Optional[str] = None,
+        content_disposition: Optional[str] = None,
+    ) -> str:
+        """단일 파일 업로드 (컨텐츠 타입/디스포지션 지원)"""
         try:
             client = await self._get_client()
             
@@ -98,6 +105,15 @@ class SwiftUploader:
                 with open(local_path, 'rb') as f:
                     content = f.read()
             
+            # 콘텐츠 타입 추론
+            if not content_type:
+                guessed, _ = mimetypes.guess_type(local_path)
+                content_type = guessed or 'application/octet-stream'
+
+            headers = {}
+            if content_disposition:
+                headers['Content-Disposition'] = content_disposition
+
             # 업로드 실행 (동기 함수를 비동기로)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -106,7 +122,8 @@ class SwiftUploader:
                     self.container,
                     object_key,
                     content,
-                    content_type='application/octet-stream'
+                    content_type=content_type,
+                    headers=headers if headers else None,
                 )
             )
             

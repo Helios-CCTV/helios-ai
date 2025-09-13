@@ -202,22 +202,28 @@ class StreamWorker:
                         local_path = Path(temp_dir)
                         
                         for file_path in local_path.rglob('*'):
-                            if file_path.is_file():
-                                filename = file_path.name
-                                
-                                # 파일명 변경 규칙
-                                if filename == "background.jpg":
-                                    new_filename = f"{cctv_id}_{date_only}.jpg"
-                                elif filename.endswith(".json"):
-                                    # JSON 파일은 원래 이름 유지하되 앞에 CCTV ID 추가
-                                    new_filename = f"{cctv_id}_{date_only}_{filename}"
-                                else:
-                                    # 기타 파일
-                                    new_filename = f"{cctv_id}_{date_only}_{filename}"
-                                
-                                object_key = f"{date_str}/{new_filename}"
-                                uploaded_key = await uploader.upload_file(str(file_path), object_key)
-                                uploaded_keys.append(uploaded_key)
+                            if not file_path.is_file():
+                                continue
+                            filename = file_path.name.lower()
+
+                            # 정책: JSON은 업로드하지 않음, 배경 이미지만 업로드
+                            if filename.endswith('.json'):
+                                continue
+                            if filename != 'background.jpg':
+                                continue
+
+                            # 파일명: {cctvId}_{YYYYMMDD}.jpg
+                            new_filename = f"{cctv_id}_{date_only}.jpg"
+                            object_key = f"{date_str}/{new_filename}"
+
+                            # 이미지 컨텐츠 타입 및 인라인 표시로 업로드
+                            uploaded_key = await uploader.upload_file(
+                                str(file_path),
+                                object_key,
+                                content_type='image/jpeg',
+                                content_disposition='inline'
+                            )
+                            uploaded_keys.append(uploaded_key)
                         
                         logger.info(f"Swift 업로드 완료: {len(uploaded_keys)}개 파일")
                     except Exception as e:
