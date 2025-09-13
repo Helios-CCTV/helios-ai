@@ -78,6 +78,12 @@ class StreamWorker:
             try:
                 await self.redis_client.xinfo_groups(stream)
                 logger.info(f"Redis 컨슈머 그룹 확인 완료: stream={stream}, group={settings.REDIS_GROUP}")
+                if settings.REDIS_RESET_GROUP_TO_BEGINNING and settings.REDIS_GROUP_START_ID:
+                    try:
+                        await self.redis_client.xgroup_setid(stream, settings.REDIS_GROUP, settings.REDIS_GROUP_START_ID)
+                        logger.warning(f"컨슈머 그룹 시작 위치 재설정: stream={stream}, id={settings.REDIS_GROUP_START_ID}")
+                    except Exception as e:
+                        logger.warning(f"xgroup setid 실패(stream={stream}): {e}")
             except redis.ResponseError as e:
                 if "no such key" in str(e).lower():
                     logger.info(f"Redis 스트림 생성 및 그룹 설정: {stream}")
@@ -96,7 +102,7 @@ class StreamWorker:
             await self.redis_client.xgroup_create(
                 stream,
                 settings.REDIS_GROUP,
-                id="$",
+                id=(settings.REDIS_GROUP_START_ID or "$"),
                 mkstream=True
             )
             logger.info(f"Redis 컨슈머 그룹 생성: stream={stream}, group={settings.REDIS_GROUP}")
@@ -421,6 +427,23 @@ class StreamWorker:
         
         self.running = True
         logger.info(f"Stream Worker 시작: {self.consumer_name}")
+        # 스트림 상태 로깅
+        try:
+            rc = await self._get_redis_client()
+            for s in self.streams:
+                try:
+                    sinfo = await rc.xinfo_stream(s)
+                    pending = 0
+                    try:
+                        p = await rc.xpending(s, settings.REDIS_GROUP)
+                        pending = p.get("pending", 0)
+                    except Exception:
+                        pass
+                    logger.info(f"stream={s} length={sinfo.get('length')} pending={pending}")
+                except Exception as e:
+                    logger.info(f"stream 상태 조회 실패(stream={s}): {e}")
+        except Exception:
+            pass
         
         # 동시성 설정 적용
         metrics.set("concurrency_current", 0)

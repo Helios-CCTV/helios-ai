@@ -47,6 +47,10 @@ class Settings:
         self.REDIS_STREAM_PREFIX: str = os.getenv("REDIS_STREAM_PREFIX", "")
         self.REDIS_STREAM_PARTITIONS: int = int(os.getenv("REDIS_STREAM_PARTITIONS", "0"))
         self.REDIS_GROUP: str = os.getenv("REDIS_GROUP", "workers")
+        # 컨슈머 그룹 시작 위치 (기본: 처음부터 = 0-0). 기존 메시지를 처리하려면 0-0 권장.
+        self.REDIS_GROUP_START_ID: str = os.getenv("REDIS_GROUP_START_ID", "0-0")
+        # 기존 그룹이 이미 존재할 때 강제로 시작 위치를 재설정할지 여부 (주의: 한 번만 true로 사용 권장)
+        self.REDIS_RESET_GROUP_TO_BEGINNING: bool = os.getenv("REDIS_RESET_GROUP_TO_BEGINNING", "false").lower() == "true"
         self.REDIS_BLOCK_MS: int = int(os.getenv("REDIS_BLOCK_MS", "5000"))
         self.REDIS_BATCH_COUNT: int = int(os.getenv("REDIS_BATCH_COUNT", "20"))
         self.REDIS_VISIBILITY_TIMEOUT: int = int(os.getenv("REDIS_VISIBILITY_TIMEOUT", "300"))
