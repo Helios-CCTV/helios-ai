@@ -53,27 +53,30 @@ class Settings:
         self.REDIS_BATCH_COUNT: int = int(os.getenv("REDIS_BATCH_COUNT", "20"))
         self.REDIS_VISIBILITY_TIMEOUT: int = int(os.getenv("REDIS_VISIBILITY_TIMEOUT", "300"))
         self.REDIS_MAX_RETRY: int = int(os.getenv("REDIS_MAX_RETRY", "3"))
-        self.REDIS_DLQ_STREAM: str = os.getenv("REDIS_DLQ_STREAM", "stream:preprocess:dlq")
-        # 배치 ACK 활성화 여부 (성공 메시지를 모아서 한 번에 XACK)
-        self.BATCH_ACK_ENABLED: bool = os.getenv("BATCH_ACK_ENABLED", "true").lower() == "true"
-        # 배치 ACK 플러시 주기 (밀리초)
-        self.ACK_FLUSH_MS: int = int(os.getenv("ACK_FLUSH_MS", "200"))
+    self.REDIS_DLQ_STREAM: str = os.getenv("REDIS_DLQ_STREAM", "stream:preprocess:dlq")
+    # 배치 ACK 활성화 여부 (성공 메시지를 모아서 한 번에 XACK)
+    self.BATCH_ACK_ENABLED: bool = os.getenv("BATCH_ACK_ENABLED", "true").lower() == "true"
+    # 배치 ACK 플러시 주기 (밀리초)
+    self.ACK_FLUSH_MS: int = int(os.getenv("ACK_FLUSH_MS", "200"))
 
-        # 동시성 설정
-        self.MAX_CONCURRENCY: int = int(os.getenv("MAX_CONCURRENCY", "2"))
-        self.GPU_MEMORY_GUARD: bool = os.getenv("GPU_MEMORY_GUARD", "true").lower() == "true"
+    # 동시성 설정
+    self.MAX_CONCURRENCY: int = int(os.getenv("MAX_CONCURRENCY", "2"))
+    self.GPU_MEMORY_GUARD: bool = os.getenv("GPU_MEMORY_GUARD", "true").lower() == "true"
 
-        # OpenStack Swift 설정
-        self.OS_AUTH_URL: str = os.getenv("OS_AUTH_URL", "")
-        self.OS_USERNAME: str = os.getenv("OS_USERNAME", "")
-        self.OS_PASSWORD: str = os.getenv("OS_PASSWORD", "")
-        self.OS_PROJECT_NAME: str = os.getenv("OS_PROJECT_NAME", "")
-        self.OS_USER_DOMAIN_NAME: str = os.getenv("OS_USER_DOMAIN_NAME", "Default")
-        self.OS_PROJECT_DOMAIN_NAME: str = os.getenv("OS_PROJECT_DOMAIN_NAME", "Default")
-        self.OS_REGION_NAME: str = os.getenv("OS_REGION_NAME", "RegionOne")
-        self.SWIFT_CONTAINER: str = os.getenv("SWIFT_CONTAINER", "cctv-preprocess")
-        self.SWIFT_UPLOAD_PREFIX: str = os.getenv("SWIFT_UPLOAD_PREFIX", "preprocess/")
-        self.SWIFT_UPLOAD_ENABLED: bool = os.getenv("SWIFT_UPLOAD_ENABLED", "true").lower() == "true"
+    # API 프로세스에서 워커를 자동 시작할지 여부 (멀티 워커 운용 시 비활성화 가능)
+    self.API_STARTS_WORKER: bool = os.getenv("API_STARTS_WORKER", "true").lower() == "true"
+
+    # OpenStack Swift 설정
+    self.OS_AUTH_URL: str = os.getenv("OS_AUTH_URL", "")
+    self.OS_USERNAME: str = os.getenv("OS_USERNAME", "")
+    self.OS_PASSWORD: str = os.getenv("OS_PASSWORD", "")
+    self.OS_PROJECT_NAME: str = os.getenv("OS_PROJECT_NAME", "")
+    self.OS_USER_DOMAIN_NAME: str = os.getenv("OS_USER_DOMAIN_NAME", "Default")
+    self.OS_PROJECT_DOMAIN_NAME: str = os.getenv("OS_PROJECT_DOMAIN_NAME", "Default")
+    self.OS_REGION_NAME: str = os.getenv("OS_REGION_NAME", "RegionOne")
+    self.SWIFT_CONTAINER: str = os.getenv("SWIFT_CONTAINER", "cctv-preprocess")
+    self.SWIFT_UPLOAD_PREFIX: str = os.getenv("SWIFT_UPLOAD_PREFIX", "preprocess/")
+    self.SWIFT_UPLOAD_ENABLED: bool = os.getenv("SWIFT_UPLOAD_ENABLED", "true").lower() == "true"
 
 
 settings = Settings()
