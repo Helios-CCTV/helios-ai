@@ -34,13 +34,22 @@ app/
 # Redis 설정
 REDIS_URL=redis://localhost:6379
 REDIS_PASSWORD=                    # (옵션)
-REDIS_STREAM=stream:preprocess
+# 단일 스트림 또는 멀티 스트림 구성
+REDIS_STREAM=stream:preprocess     # 기본 단일 스트림
+# 또는 아래 중 하나를 사용 (둘 다 설정 시 REDIS_STREAMS가 우선)
+# REDIS_STREAMS=stream:preprocess:0,stream:preprocess:1,stream:preprocess:2,stream:preprocess:3
+# REDIS_STREAM_PREFIX=stream:preprocess
+# REDIS_STREAM_PARTITIONS=4
 REDIS_GROUP=workers
 REDIS_BLOCK_MS=5000
 REDIS_BATCH_COUNT=20
 REDIS_VISIBILITY_TIMEOUT=300
 REDIS_MAX_RETRY=3
 REDIS_DLQ_STREAM=stream:preprocess:dlq
+
+# 배치 ACK (성공 메시지 모아서 한번에 ACK)
+BATCH_ACK_ENABLED=true
+ACK_FLUSH_MS=200                  # ACK 버퍼 플러시 주기(ms)
 
 # 동시성 설정
 MAX_CONCURRENCY=2                  # 기본 2개
@@ -154,8 +163,13 @@ GPU_MEMORY_GUARD=true
 ### 높은 처리량 필요 시
 ```bash
 MAX_CONCURRENCY=4
-REDIS_BATCH_COUNT=30
+REDIS_BATCH_COUNT=64
 REDIS_BLOCK_MS=1000
+BATCH_ACK_ENABLED=true
+ACK_FLUSH_MS=200
+# 파티션 예시 (4개 스트림)
+REDIS_STREAM_PREFIX=stream:preprocess
+REDIS_STREAM_PARTITIONS=4
 ```
 
 ### 네트워크 지연이 큰 환경

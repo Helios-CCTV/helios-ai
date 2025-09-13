@@ -9,7 +9,8 @@ import logging
 import shutil
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, DefaultDict
+from collections import defaultdict
 import redis.asyncio as redis
 from app.core.config import settings
 from app.metrics import metrics
@@ -28,8 +29,26 @@ class StreamWorker:
         self.running = False
         self.semaphore = asyncio.Semaphore(settings.MAX_CONCURRENCY)
         self.current_concurrency = settings.MAX_CONCURRENCY
+        # 소비할 스트림 집합 계산 (파티션/멀티스트림 지원)
+        self.streams: List[str] = self._resolve_streams()
+        # 배치 ACK 버퍼
+        self._ack_buffers: DefaultDict[str, List[str]] = defaultdict(list)
+        self._ack_lock = asyncio.Lock()
         
-        logger.info(f"Stream Worker 초기화: consumer={self.consumer_name}, concurrency={self.current_concurrency}")
+        logger.info(
+            f"Stream Worker 초기화: consumer={self.consumer_name}, concurrency={self.current_concurrency}, streams={self.streams}"
+        )
+
+    def _resolve_streams(self) -> List[str]:
+        """환경설정으로부터 소비할 스트림 목록 생성"""
+        if getattr(settings, 'REDIS_STREAMS', None):
+            return list(settings.REDIS_STREAMS)
+        if getattr(settings, 'REDIS_STREAM_PREFIX', None) and getattr(settings, 'REDIS_STREAM_PARTITIONS', 0) > 0:
+            prefix = settings.REDIS_STREAM_PREFIX
+            parts = settings.REDIS_STREAM_PARTITIONS
+            return [f"{prefix}:{i}" for i in range(parts)]
+        # 기본 단일 스트림
+        return [settings.REDIS_STREAM]
     
     async def _get_redis_client(self) -> redis.Redis:
         """Redis 클라이언트 가져오기 (지연 초기화)"""
@@ -47,44 +66,45 @@ class StreamWorker:
             await self.redis_client.ping()
             logger.info("Redis 연결 성공")
             
-            # 컨슈머 그룹 자동 생성/복구
+            # 컨슈머 그룹 자동 생성/복구 (모든 스트림)
             await self._ensure_consumer_group()
         
         return self.redis_client
     
     async def _ensure_consumer_group(self):
-        """컨슈머 그룹 존재 확인 및 생성"""
-        try:
-            # 컨슈머 그룹 정보 확인
-            await self.redis_client.xinfo_groups(settings.REDIS_STREAM)
-            logger.info(f"Redis 컨슈머 그룹 확인 완료: {settings.REDIS_GROUP}")
-        except redis.ResponseError as e:
-            if "no such key" in str(e).lower():
-                # 스트림이 존재하지 않는 경우 생성
-                logger.info(f"Redis 스트림 생성: {settings.REDIS_STREAM}")
-                await self._create_consumer_group()
-            else:
-                logger.warning(f"컨슈머 그룹 확인 중 오류: {e}")
-                await self._create_consumer_group()
-        except Exception as e:
-            logger.warning(f"컨슈머 그룹 확인 실패: {e}")
-            await self._create_consumer_group()
+        """컨슈머 그룹 존재 확인 및 생성 (모든 스트림)"""
+        assert self.redis_client is not None
+        for stream in self.streams:
+            try:
+                await self.redis_client.xinfo_groups(stream)
+                logger.info(f"Redis 컨슈머 그룹 확인 완료: stream={stream}, group={settings.REDIS_GROUP}")
+            except redis.ResponseError as e:
+                if "no such key" in str(e).lower():
+                    logger.info(f"Redis 스트림 생성 및 그룹 설정: {stream}")
+                    await self._create_consumer_group(stream)
+                else:
+                    logger.warning(f"컨슈머 그룹 확인 중 오류(stream={stream}): {e}")
+                    await self._create_consumer_group(stream)
+            except Exception as e:
+                logger.warning(f"컨슈머 그룹 확인 실패(stream={stream}): {e}")
+                await self._create_consumer_group(stream)
     
-    async def _create_consumer_group(self):
-        """컨슈머 그룹 생성"""
+    async def _create_consumer_group(self, stream: str):
+        """컨슈머 그룹 생성 (단일 스트림)"""
+        assert self.redis_client is not None
         try:
             await self.redis_client.xgroup_create(
-                settings.REDIS_STREAM,
+                stream,
                 settings.REDIS_GROUP,
                 id="$",
                 mkstream=True
             )
-            logger.info(f"Redis 컨슈머 그룹 생성: {settings.REDIS_GROUP}")
+            logger.info(f"Redis 컨슈머 그룹 생성: stream={stream}, group={settings.REDIS_GROUP}")
         except redis.ResponseError as e:
             if "BUSYGROUP" in str(e):
-                logger.info(f"Redis 컨슈머 그룹 이미 존재: {settings.REDIS_GROUP}")
+                logger.info(f"Redis 컨슈머 그룹 이미 존재: stream={stream}, group={settings.REDIS_GROUP}")
             else:
-                logger.error(f"컨슈머 그룹 생성 실패: {e}")
+                logger.error(f"컨슈머 그룹 생성 실패(stream={stream}): {e}")
                 raise
     
     async def _check_gpu_memory(self) -> bool:
@@ -133,7 +153,7 @@ class StreamWorker:
                 # GPU 메모리 체크
                 if not await self._check_gpu_memory():
                     # 메모리 부족 시 재큐
-                    await self._requeue_message(fields, attempt, "GPU 메모리 부족")
+                    await self._requeue_message(stream_name, fields, attempt, "GPU 메모리 부족")
                     return
                 
                 # 전처리 실행
@@ -156,7 +176,7 @@ class StreamWorker:
                     # Spring Boot는 attempt=1부터 시작하므로 3회까지 허용
                     if attempt < 3:  # HLS 연결 실패는 최대 3회까지만 재시도
                         await asyncio.sleep(30)  # 30초 후 재시도
-                        await self._requeue_message(fields, attempt, f"HLS 연결 실패: {result['meta'].get('hls_connection_error', '알 수 없는 오류')}")
+                        await self._requeue_message(stream_name, fields, attempt, f"HLS 연결 실패: {result['meta'].get('hls_connection_error', '알 수 없는 오류')}")
                         return
                     else:
                         # 3회 실패 시 부분 성공으로 처리하고 업로드
@@ -220,9 +240,8 @@ class StreamWorker:
                 elif processing_status == "failed_hls_connection":
                     metrics.increment("processed")  # 오류 정보라도 처리했으므로
                     logger.warning(f"메시지 처리 완료 (HLS 실패): job_id={job_id}, 업로드={len(uploaded_keys)}개 파일")
-                # 성공 처리 (모든 상태에서 XACK)
-                redis_client = await self._get_redis_client()
-                await redis_client.xack(settings.REDIS_STREAM, settings.REDIS_GROUP, message_id)
+                # 성공 처리 (모든 상태에서 ACK 스케줄)
+                await self._schedule_ack(stream_name, message_id)
                 
             except Exception as e:
                 logger.error(f"메시지 처리 실패: job_id={job_id}, 오류: {e}")
@@ -240,18 +259,18 @@ class StreamWorker:
                 redis_client = await self._get_redis_client()
                 
                 if attempt < settings.REDIS_MAX_RETRY:
-                    await self._requeue_message(fields, attempt, str(e))
+                    await self._requeue_message(stream_name, fields, attempt, str(e))
                     # 재시도할 경우에만 XACK하지 않음 (원본 메시지는 유지)
                 else:
                     # 최대 재시도 도달 시 DLQ로 이동하고 XACK
                     await self._move_to_dlq(fields, str(e))
-                    await redis_client.xack(settings.REDIS_STREAM, settings.REDIS_GROUP, message_id)
+                    await self._schedule_ack(stream_name, message_id)
                     logger.info(f"최대 재시도 도달, DLQ 이동 후 XACK: job_id={job_id}")
                     
             finally:
                 metrics.decrement("concurrency_current")
     
-    async def _requeue_message(self, fields: Dict[str, str], attempt: int, error: str):
+    async def _requeue_message(self, stream_name: str, fields: Dict[str, str], attempt: int, error: str):
         """메시지 재큐"""
         try:
             # attempt 증가
@@ -260,10 +279,10 @@ class StreamWorker:
             fields["retry_at"] = str(int(time.time() * 1000))
             
             redis_client = await self._get_redis_client()
-            await redis_client.xadd(settings.REDIS_STREAM, fields)
+            await redis_client.xadd(stream_name, fields)
             
             metrics.increment("retried")
-            logger.info(f"메시지 재큐: attempt={attempt + 1}, error={error}")
+            logger.info(f"메시지 재큐(stream={stream_name}): attempt={attempt + 1}, error={error}")
             
         except Exception as e:
             logger.error(f"메시지 재큐 실패: {e}")
@@ -292,10 +311,11 @@ class StreamWorker:
             try:
                 logger.debug("메시지 대기 중...")
                 # 메시지 읽기
+                streams_spec = {s: ">" for s in self.streams}
                 messages = await redis_client.xreadgroup(
                     settings.REDIS_GROUP,
                     self.consumer_name,
-                    {settings.REDIS_STREAM: ">"},
+                    streams_spec,
                     count=settings.REDIS_BATCH_COUNT,
                     block=settings.REDIS_BLOCK_MS
                 )
@@ -343,8 +363,14 @@ class StreamWorker:
         """대기 중인 메시지 수 조회"""
         try:
             redis_client = await self._get_redis_client()
-            info = await redis_client.xpending(settings.REDIS_STREAM, settings.REDIS_GROUP)
-            return info.get("pending", 0)
+            total = 0
+            for stream in self.streams:
+                try:
+                    info = await redis_client.xpending(stream, settings.REDIS_GROUP)
+                    total += info.get("pending", 0)
+                except Exception:
+                    continue
+            return total
         except:
             return 0
     
@@ -358,15 +384,19 @@ class StreamWorker:
                 timeout_ms = settings.REDIS_VISIBILITY_TIMEOUT * 1000
                 current_time = int(time.time() * 1000)
                 
-                # XAUTOCLAIM으로 타임아웃된 메시지 회수
-                await redis_client.xautoclaim(
-                    settings.REDIS_STREAM,
-                    settings.REDIS_GROUP,
-                    self.consumer_name,
-                    min_idle_time=timeout_ms,
-                    start_id="0-0",
-                    count=10
-                )
+                # XAUTOCLAIM으로 타임아웃된 메시지 회수 (모든 스트림)
+                for stream in self.streams:
+                    try:
+                        await redis_client.xautoclaim(
+                            stream,
+                            settings.REDIS_GROUP,
+                            self.consumer_name,
+                            min_idle_time=timeout_ms,
+                            start_id="0-0",
+                            count=10
+                        )
+                    except Exception as e:
+                        logger.debug(f"XAUTOCLAIM 실패(stream={stream}): {e}")
                 
                 # 30초마다 실행
                 await asyncio.sleep(30)
@@ -392,7 +422,8 @@ class StreamWorker:
         # 백그라운드 태스크 시작
         tasks = [
             asyncio.create_task(self._consume_loop()),
-            asyncio.create_task(self._visibility_timeout_loop())
+            asyncio.create_task(self._visibility_timeout_loop()),
+            asyncio.create_task(self._ack_flush_loop())
         ]
         
         try:
@@ -405,6 +436,12 @@ class StreamWorker:
                 if not task.done():
                     task.cancel()
             
+            # 남은 ACK 플러시
+            try:
+                await self._flush_acks()
+            except Exception:
+                pass
+
             if self.redis_client:
                 await self.redis_client.close()
     
@@ -423,6 +460,49 @@ class StreamWorker:
         self.semaphore = asyncio.Semaphore(new_concurrency)
         
         logger.info(f"동시성 업데이트: {old_concurrency} -> {new_concurrency}")
+
+    async def _schedule_ack(self, stream_name: str, message_id: str):
+        """ACK 버퍼에 메시지 추가 (배치 ACK)"""
+        if not settings.BATCH_ACK_ENABLED:
+            # 즉시 ACK 수행
+            redis_client = await self._get_redis_client()
+            try:
+                await redis_client.xack(stream_name, settings.REDIS_GROUP, message_id)
+            except Exception as e:
+                logger.warning(f"즉시 ACK 실패(stream={stream_name}, id={message_id}): {e}")
+            return
+        async with self._ack_lock:
+            self._ack_buffers[stream_name].append(message_id)
+
+    async def _flush_acks(self):
+        """버퍼된 ACK를 플러시"""
+        if not settings.BATCH_ACK_ENABLED:
+            return
+        redis_client = await self._get_redis_client()
+        async with self._ack_lock:
+            for stream, ids in list(self._ack_buffers.items()):
+                if not ids:
+                    continue
+                batch = ids[:]
+                self._ack_buffers[stream].clear()
+                try:
+                    # xack는 가변 인자를 허용함
+                    await redis_client.xack(stream, settings.REDIS_GROUP, *batch)
+                    logger.debug(f"배치 ACK 완료(stream={stream}, count={len(batch)})")
+                except Exception as e:
+                    logger.error(f"배치 ACK 실패(stream={stream}, count={len(batch)}): {e}")
+
+    async def _ack_flush_loop(self):
+        """주기적으로 ACK 버퍼를 플러시"""
+        interval = max(50, settings.ACK_FLUSH_MS) / 1000.0
+        while self.running:
+            try:
+                await asyncio.sleep(interval)
+                await self._flush_acks()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"ACK 플러시 루프 오류: {e}")
 
 
 # 글로벌 워커 인스턴스
