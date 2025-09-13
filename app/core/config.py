@@ -40,12 +40,10 @@ class Settings:
         self.REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
         self.REDIS_STREAM: str = os.getenv("REDIS_STREAM", "stream:preprocess")
         # 선택적으로 다중 스트림(파티션) 구성 지원
-        # 1) 콤마로 구분된 스트림 목록 제공 (예: "stream:preprocess:0,stream:preprocess:1")
         _streams_env = os.getenv("REDIS_STREAMS", "")
         self.REDIS_STREAMS: List[str] = (
             [s.strip() for s in _streams_env.split(",") if s.strip()] if _streams_env else []
         )
-        # 2) 프리픽스 + 파티션 수로 생성 (예: 프리픽스=stream:preprocess, 파티션=4 => stream:preprocess:0..3)
         self.REDIS_STREAM_PREFIX: str = os.getenv("REDIS_STREAM_PREFIX", "")
         self.REDIS_STREAM_PARTITIONS: int = int(os.getenv("REDIS_STREAM_PARTITIONS", "0"))
         self.REDIS_GROUP: str = os.getenv("REDIS_GROUP", "workers")
@@ -53,30 +51,27 @@ class Settings:
         self.REDIS_BATCH_COUNT: int = int(os.getenv("REDIS_BATCH_COUNT", "20"))
         self.REDIS_VISIBILITY_TIMEOUT: int = int(os.getenv("REDIS_VISIBILITY_TIMEOUT", "300"))
         self.REDIS_MAX_RETRY: int = int(os.getenv("REDIS_MAX_RETRY", "3"))
-    self.REDIS_DLQ_STREAM: str = os.getenv("REDIS_DLQ_STREAM", "stream:preprocess:dlq")
-    # 배치 ACK 활성화 여부 (성공 메시지를 모아서 한 번에 XACK)
-    self.BATCH_ACK_ENABLED: bool = os.getenv("BATCH_ACK_ENABLED", "true").lower() == "true"
-    # 배치 ACK 플러시 주기 (밀리초)
-    self.ACK_FLUSH_MS: int = int(os.getenv("ACK_FLUSH_MS", "200"))
+        self.REDIS_DLQ_STREAM: str = os.getenv("REDIS_DLQ_STREAM", "stream:preprocess:dlq")
+        # 배치 ACK
+        self.BATCH_ACK_ENABLED: bool = os.getenv("BATCH_ACK_ENABLED", "true").lower() == "true"
+        self.ACK_FLUSH_MS: int = int(os.getenv("ACK_FLUSH_MS", "200"))
 
-    # 동시성 설정
-    self.MAX_CONCURRENCY: int = int(os.getenv("MAX_CONCURRENCY", "2"))
-    self.GPU_MEMORY_GUARD: bool = os.getenv("GPU_MEMORY_GUARD", "true").lower() == "true"
+        # 동시성/워커 시작 제어
+        self.MAX_CONCURRENCY: int = int(os.getenv("MAX_CONCURRENCY", "2"))
+        self.GPU_MEMORY_GUARD: bool = os.getenv("GPU_MEMORY_GUARD", "true").lower() == "true"
+        self.API_STARTS_WORKER: bool = os.getenv("API_STARTS_WORKER", "true").lower() == "true"
 
-    # API 프로세스에서 워커를 자동 시작할지 여부 (멀티 워커 운용 시 비활성화 가능)
-    self.API_STARTS_WORKER: bool = os.getenv("API_STARTS_WORKER", "true").lower() == "true"
-
-    # OpenStack Swift 설정
-    self.OS_AUTH_URL: str = os.getenv("OS_AUTH_URL", "")
-    self.OS_USERNAME: str = os.getenv("OS_USERNAME", "")
-    self.OS_PASSWORD: str = os.getenv("OS_PASSWORD", "")
-    self.OS_PROJECT_NAME: str = os.getenv("OS_PROJECT_NAME", "")
-    self.OS_USER_DOMAIN_NAME: str = os.getenv("OS_USER_DOMAIN_NAME", "Default")
-    self.OS_PROJECT_DOMAIN_NAME: str = os.getenv("OS_PROJECT_DOMAIN_NAME", "Default")
-    self.OS_REGION_NAME: str = os.getenv("OS_REGION_NAME", "RegionOne")
-    self.SWIFT_CONTAINER: str = os.getenv("SWIFT_CONTAINER", "cctv-preprocess")
-    self.SWIFT_UPLOAD_PREFIX: str = os.getenv("SWIFT_UPLOAD_PREFIX", "preprocess/")
-    self.SWIFT_UPLOAD_ENABLED: bool = os.getenv("SWIFT_UPLOAD_ENABLED", "true").lower() == "true"
+        # OpenStack Swift 설정
+        self.OS_AUTH_URL: str = os.getenv("OS_AUTH_URL", "")
+        self.OS_USERNAME: str = os.getenv("OS_USERNAME", "")
+        self.OS_PASSWORD: str = os.getenv("OS_PASSWORD", "")
+        self.OS_PROJECT_NAME: str = os.getenv("OS_PROJECT_NAME", "")
+        self.OS_USER_DOMAIN_NAME: str = os.getenv("OS_USER_DOMAIN_NAME", "Default")
+        self.OS_PROJECT_DOMAIN_NAME: str = os.getenv("OS_PROJECT_DOMAIN_NAME", "Default")
+        self.OS_REGION_NAME: str = os.getenv("OS_REGION_NAME", "RegionOne")
+        self.SWIFT_CONTAINER: str = os.getenv("SWIFT_CONTAINER", "cctv-preprocess")
+        self.SWIFT_UPLOAD_PREFIX: str = os.getenv("SWIFT_UPLOAD_PREFIX", "preprocess/")
+        self.SWIFT_UPLOAD_ENABLED: bool = os.getenv("SWIFT_UPLOAD_ENABLED", "true").lower() == "true"
 
 
 settings = Settings()

@@ -15,7 +15,6 @@ except ImportError:
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
-from app.worker.stream_worker import get_stream_worker
 from app.metrics import metrics
 
 # 로깅 설정
@@ -81,6 +80,8 @@ async def openapi_proxy():
 async def get_worker_status():
     """워커 상태 조회"""
     try:
+        # 지연 임포트로 의존성 문제 최소화
+        from app.worker.stream_worker import get_stream_worker
         worker = get_stream_worker()
         return {
             "running": worker.running,
@@ -95,6 +96,7 @@ async def get_worker_status():
 async def get_worker_status_proxy():
     """워커 상태 조회 (프록시용)"""
     try:
+        from app.worker.stream_worker import get_stream_worker
         worker = get_stream_worker()
         return {
             "running": worker.running,
@@ -113,10 +115,14 @@ async def startup_event():
     """앱 시작 시 워커 시작"""
     global worker_task
     try:
-        # Stream Worker 시작
-        worker = get_stream_worker()
-        worker_task = asyncio.create_task(worker.start())
-        logger.info("Stream Worker 백그라운드 태스크 시작")
+        if settings.API_STARTS_WORKER:
+            # Stream Worker 시작 (옵션)
+            from app.worker.stream_worker import get_stream_worker
+            worker = get_stream_worker()
+            worker_task = asyncio.create_task(worker.start())
+            logger.info("Stream Worker 백그라운드 태스크 시작")
+        else:
+            logger.info("API_STARTS_WORKER=false: API만 시작, 워커는 시작하지 않음")
     except Exception as e:
         logger.error(f"Stream Worker 시작 실패: {e}")
 
@@ -127,6 +133,7 @@ async def shutdown_event():
     try:
         if worker_task:
             # 워커 중지
+            from app.worker.stream_worker import get_stream_worker
             worker = get_stream_worker()
             await worker.stop()
             
@@ -163,6 +170,7 @@ async def update_concurrency(n: int):
         raise HTTPException(status_code=400, detail="동시성은 1-10 사이여야 합니다")
     
     try:
+        from app.worker.stream_worker import get_stream_worker
         worker = get_stream_worker()
         worker.update_concurrency(n)
         return {"success": True, "new_concurrency": n, "message": f"동시성이 {n}으로 변경되었습니다"}
@@ -173,6 +181,7 @@ async def update_concurrency(n: int):
 async def get_worker_status():
     """워커 상태 조회"""
     try:
+        from app.worker.stream_worker import get_stream_worker
         worker = get_stream_worker()
         return {
             "running": worker.running,
