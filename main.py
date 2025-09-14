@@ -14,6 +14,7 @@ except ImportError:
     print("python-dotenv not installed, using system environment variables")
 
 from app.api.api_v1.api import api_router
+from app.api.endpoints import analyze as analyze_ep
 from app.core.config import settings
 from app.metrics import metrics
 
@@ -47,6 +48,7 @@ app.add_middleware(
 
 # API 라우터 포함
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(analyze_ep.router)
 
 # 메트릭 및 상태 확인 엔드포인트들
 @app.get("/health", tags=["health"])
