@@ -133,6 +133,41 @@ class SwiftUploader:
         except Exception as e:
             logger.error(f"파일 업로드 실패: {local_path} -> {object_key}, 오류: {e}")
             raise
+
+    async def upload_bytes(
+        self,
+        content: bytes,
+        object_key: str,
+        content_type: str = "application/octet-stream",
+        content_disposition: Optional[str] = None,
+    ) -> str:
+        """바이트 데이터를 직접 업로드"""
+        try:
+            client = await self._get_client()
+
+            headers = {}
+            if content_disposition:
+                headers['Content-Disposition'] = content_disposition
+
+            # 업로드 실행 (동기 함수를 비동기로)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: client.put_object(
+                    self.container,
+                    object_key,
+                    content,
+                    content_type=content_type,
+                    headers=headers if headers else None,
+                )
+            )
+            
+            logger.info(f"바이트 데이터 업로드 완료: {len(content)} bytes -> {object_key}")
+            return object_key
+            
+        except Exception as e:
+            logger.error(f"바이트 데이터 업로드 실패: {object_key}, 오류: {e}")
+            raise
     
     async def upload_dir_to_swift(self, local_dir: str, prefix: str) -> List[str]:
         """

@@ -76,6 +76,18 @@ class Settings:
         self.SWIFT_CONTAINER: str = os.getenv("SWIFT_CONTAINER", "cctv-preprocess")
         self.SWIFT_UPLOAD_PREFIX: str = os.getenv("SWIFT_UPLOAD_PREFIX", "preprocess/")
         self.SWIFT_UPLOAD_ENABLED: bool = os.getenv("SWIFT_UPLOAD_ENABLED", "true").lower() == "true"
+        self.SWIFT_PUBLIC_BASE_URL: str = os.getenv("SWIFT_PUBLIC_BASE_URL", "")
+
+        # MySQL 설정 (SSH 터널링)
+        self.MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
+        self.MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
+        self.MYSQL_DB: str = os.getenv("MYSQL_DB", "helios")
+        self.MYSQL_USER: str = os.getenv("MYSQL_USER", "helios")
+        self.MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "")
+
+        # AI Model 설정
+        self.ANALYZE_MODEL_PATH: str = os.getenv("ANALYZE_MODEL_PATH", "models/09-08-best-final-model.pt")
+        self.YOLO_CONF_THRESH: float = float(os.getenv("YOLO_CONF_THRESH", "0.25"))
 
 
 settings = Settings()
