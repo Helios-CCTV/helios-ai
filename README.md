@@ -1,18 +1,29 @@
-# Helios CCTV AI
+# Helios CCTV AI & 도로 파손 탐지 API
 
-CCTV 위치 데이터를 수집하고 MySQL 데이터베이스에 저장하는 Python 애플리케이션입니다.
+이 프로젝트는 두 가지 주요 기능을 제공합니다:
+1. CCTV 위치 데이터를 수집하고 MySQL 데이터베이스에 저장하는 기능
+2. CCTV 영상 및 이미지에서 도로 파손을 탐지하고 분석하는 API 기능
 
-## 기능
+## 주요 기능
 
+### 1. CCTV 데이터 수집 (cctv_to_db.py)
 - 한국 ITS 공개 API를 통한 CCTV 위치 데이터 수집
 - MySQL 데이터베이스에 CCTV 데이터 저장
 - 공간 인덱스를 활용한 효율적인 좌표 검색
 - 행정구역과 CCTV 위치 매칭
 
+### 2. 도로 파손 탐지 API (main.py)
+- 이미지에서 도로 파손 탐지 (포트홀, 균열, 패치 등)
+- 비디오에서 도로 파손 탐지 및 시간별 분석
+- 파손 심각도 계산 및 분석
+- 배치 프로세싱을 통한 다중 이미지 분석
+- 파손 통계 데이터 제공
+
 ## 설치 및 설정
 
 ### 1. 필요한 패키지 설치
 
+#### CCTV 데이터 수집용
 ```bash
 pip install -r requirements.txt
 ```
@@ -20,6 +31,21 @@ pip install -r requirements.txt
 또는 개별 설치:
 ```bash
 pip install requests mysql-connector-python PyMySQL shapely python-dotenv pandas
+```
+
+#### 도로 파손 탐지 API용
+```bash
+# 가상환경 생성 (권장)
+python -m venv fastapi-venv
+
+# 가상환경 활성화 (Windows)
+fastapi-venv\Scripts\activate
+
+# 가상환경 활성화 (Linux/Mac)
+source fastapi-venv/bin/activate
+
+# 필요 패키지 설치
+pip install -r requirements-fastapi.txt
 ```
 
 ### 2. MySQL 설정
@@ -58,15 +84,131 @@ cp .env.example .env
 
 ## 사용법
 
-### 기본 실행
+### CCTV 데이터 수집
 ```bash
+# 기본 실행
 python cctv_to_db.py
+
+# 도움말
+python cctv_to_db.py --help
+
+# API 데이터만 조회 (DB 저장 안 함)
+python cctv_to_db.py --api-only
 ```
 
-### 도움말
+### 도로 파손 탐지 API
+
 ```bash
-python cctv_to_db.py --help
+# 가상환경 활성화
+fastapi-venv\Scripts\activate  # Windows
+source fastapi-venv/bin/activate  # Linux/Mac
+
+# 개발 모드로 실행
+uvicorn main:app --reload
+
+# 프로덕션 모드로 실행
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
+
+API 문서는 서버 실행 후 다음 URL에서 확인할 수 있습니다:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+## API 엔드포인트
+
+### 1. 이미지에서 도로 파손 탐지
+
+```
+POST /api/v1/damage-detection/analyze
+```
+
+- 요청: multipart/form-data
+  - `file`: 이미지 파일
+  - `confidence`: 신뢰도 임계값 (기본값: 0.25)
+  - `include_image`: 결과 이미지를 Base64로 포함할지 여부 (기본값: true)
+  - `location_lat`, `location_lng`: 위치 정보 (선택 사항)
+  - `image_id`: 이미지 식별자 (선택 사항)
+
+### 2. 실시간 스트리밍에서 도로 파손 탐지 (단일 프레임)
+
+```
+POST /api/v1/damage-detection/analyze-stream
+```
+
+- 요청: form-data
+  - `stream_url`: 스트리밍 URL (HLS, RTSP, HTTP 등)
+  - `confidence`: 신뢰도 임계값 (기본값: 0.25)
+  - `include_image`: 결과 이미지를 Base64로 포함할지 여부 (기본값: true)
+  - `location_lat`, `location_lng`: 위치 정보 (선택 사항)
+  - `stream_id`: 스트림 식별자 (선택 사항)
+  - `sample_interval`: 샘플링 간격(초) (기본값: 10)
+
+### 3. 실시간 스트리밍 비디오 (MJPEG)
+
+```
+GET /api/v1/damage-detection/stream-video?stream_url={STREAM_URL}&confidence=0.25&fps=10
+```
+
+- 쿼리 파라미터:
+  - `stream_url`: 스트리밍 URL (필수)
+  - `confidence`: 탐지 신뢰도 임계값 (기본값: 0.25)
+  - `fps`: 초당 프레임 수 (기본값: 10)
+
+- 반환: MJPEG 형식의 실시간 처리된 비디오 스트림
+- 사용 예: `<img src="http://localhost:8000/api/v1/damage-detection/stream-video?stream_url=YOUR_STREAM_URL">`
+
+### 4. 웹소켓을 통한 실시간 스트리밍
+
+```
+WebSocket: /api/v1/damage-detection/stream-live/{stream_id}
+```
+
+- URL 파라미터:
+  - `stream_id`: 스트림 식별자
+  
+- 연결 후 JSON으로 전송:
+  ```json
+  {
+    "stream_url": "RTSP_OR_HLS_URL",
+    "confidence": 0.25
+  }
+  ```
+  
+- 응답 (JSON):
+  ```json
+  {
+    "frame": "BASE64_ENCODED_IMAGE",
+    "damages": [...],
+    "damage_count": 2,
+    "damage_summary": {"crack": 1, "pothole": 1},
+    "timestamp": "2025-08-20T12:34:56.789"
+  }
+  ```
+
+### 5. 비디오에서 도로 파손 탐지
+
+```
+POST /api/v1/damage-detection/analyze-video
+```
+
+- 요청: multipart/form-data
+  - `file`: 비디오 파일
+  - `confidence`: 신뢰도 임계값 (기본값: 0.25)
+  - `fps_interval`: 프레임 간격 (기본값: 1)
+  - `video_id`: 비디오 식별자 (선택 사항)
+
+### 6. 통계 데이터 조회
+
+```
+GET /api/v1/damage-detection/statistics
+```
+
+- 쿼리 파라미터:
+  - `start_date`: 시작 날짜 (YYYY-MM-DD)
+  - `end_date`: 종료 날짜 (YYYY-MM-DD)
+  - `damage_type`: 파손 유형
+  - `min_severity`: 최소 심각도
+  - `location_range`: 위치 범위
 
 ## 데이터베이스 스키마
 

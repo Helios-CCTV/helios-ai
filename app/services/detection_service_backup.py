@@ -216,7 +216,7 @@ class DetectionService:
                 "success": True,
                 "message": "도로 파손 탐지 완료",
                 "process_time": process_time,
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": datetime.datetime.now(),
                 "image_id": image_id,
                 "location": location,
                 "damages": damages,
@@ -715,11 +715,10 @@ class DetectionService:
         grid_height: int = 4,
         sample_interval: int = 1,
         duration_seconds: int = 20,
-        include_result_image: bool = True,
-        include_process_steps: bool = True
+        include_result_image: bool = True
     ) -> Dict[str, Any]:
         """
-        비디오에서 배경 이미지 추출 (과정 시각화 포함)
+        비디오에서 배경 이미지 추출
         
         Args:
             video_path: 비디오 파일 경로
@@ -728,7 +727,6 @@ class DetectionService:
             sample_interval: 프레임 샘플링 간격
             duration_seconds: 분석할 길이(초)
             include_result_image: 결과 이미지 포함 여부
-            include_process_steps: 과정 시각화 이미지 포함 여부
             
         Returns:
             Dict: 배경 추출 결과
@@ -758,10 +756,6 @@ class DetectionService:
             processed_frames = 0
             frame_count = 0
             
-            # 과정 시각화를 위한 샘플 프레임들 저장
-            sample_frames = []
-            progress_steps = []
-            
             print("프레임 처리 시작...")
             while frame_count < total_frames:
                 ret, frame = cap.read()
@@ -770,12 +764,6 @@ class DetectionService:
                 
                 # 샘플링 간격에 따라 프레임 건너뛰기
                 if frame_count % sample_interval == 0:
-                    # 발표용으로 첫 번째, 중간, 마지막 프레임들 저장
-                    if include_process_steps and (processed_frames == 0 or 
-                                                processed_frames == total_frames // (2 * sample_interval) or
-                                                processed_frames == total_frames // sample_interval - 1):
-                        sample_frames.append(frame.copy())
-                    
                     # 각 구역별로 프레임 분할하여 처리
                     for grid_y in range(grid_height):
                         for grid_x in range(grid_width):
@@ -804,9 +792,6 @@ class DetectionService:
             # 그리드 시각화를 위한 이미지 생성
             grid_overlay = np.zeros((height, width, 3), dtype=np.uint8)
             
-            # 과정 시각화를 위한 단계별 배경 이미지들
-            step_backgrounds = []
-            
             for grid_y in range(grid_height):
                 for grid_x in range(grid_width):
                     if grid_pixels[grid_y][grid_x]:
@@ -821,20 +806,6 @@ class DetectionService:
                         end_x = min((grid_x + 1) * grid_w, width)
                         
                         background[start_y:end_y, start_x:end_x] = median_region
-                        
-                        # 과정 시각화: 각 구역이 완성될 때마다 중간 결과 저장
-                        if include_process_steps and ((grid_y * grid_width + grid_x) % 4 == 0):
-                            step_bg = background.copy()
-                            # 아직 처리되지 않은 구역들을 회색으로 표시
-                            for y in range(grid_height):
-                                for x in range(grid_width):
-                                    if y * grid_width + x > grid_y * grid_width + grid_x:
-                                        sy = y * grid_h
-                                        ey = min((y + 1) * grid_h, height)
-                                        sx = x * grid_w
-                                        ex = min((x + 1) * grid_w, width)
-                                        step_bg[sy:ey, sx:ex] = [128, 128, 128]  # 회색
-                            step_backgrounds.append(step_bg.copy())
                         
                         # 그리드 경계선 그리기 (시각화용)
                         cv2.rectangle(grid_overlay, (start_x, start_y), (end_x-1, end_y-1), 
@@ -888,47 +859,6 @@ class DetectionService:
                 _, overlay_encoded = cv2.imencode('.jpg', grid_only)
                 overlay_base64 = base64.b64encode(overlay_encoded).decode('utf-8')
                 result["grid_overlay"] = overlay_base64
-                
-                # 4. 과정 시각화 이미지들 (발표용)
-                if include_process_steps:
-                    # 샘플 프레임들
-                    result["sample_frames"] = []
-                    for i, frame in enumerate(sample_frames):
-                        _, frame_encoded = cv2.imencode('.jpg', frame)
-                        frame_base64 = base64.b64encode(frame_encoded).decode('utf-8')
-                        result["sample_frames"].append({
-                            "step": i + 1,
-                            "description": f"원본 프레임 {i + 1}",
-                            "image": frame_base64
-                        })
-                    
-                    # 배경 생성 단계별 이미지들
-                    result["process_steps"] = []
-                    for i, step_bg in enumerate(step_backgrounds):
-                        _, step_encoded = cv2.imencode('.jpg', step_bg)
-                        step_base64 = base64.b64encode(step_encoded).decode('utf-8')
-                        completed_regions = (i + 1) * 4
-                        result["process_steps"].append({
-                            "step": i + 1,
-                            "description": f"구역 {completed_regions}개 완성",
-                            "image": step_base64
-                        })
-                    
-                    # 전/후 비교 이미지 생성
-                    if sample_frames:
-                        # 첫 번째 프레임과 최종 배경 이미지 비교
-                        first_frame = sample_frames[0]
-                        comparison = np.hstack([first_frame, background])
-                        
-                        # 비교 텍스트 추가
-                        cv2.putText(comparison, "BEFORE (Original Frame)", 
-                                  (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        cv2.putText(comparison, "AFTER (Background Extracted)", 
-                                  (width + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        
-                        _, comp_encoded = cv2.imencode('.jpg', comparison)
-                        comp_base64 = base64.b64encode(comp_encoded).decode('utf-8')
-                        result["comparison_image"] = comp_base64
             
             # 배경 이미지 파일들로 저장
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -965,10 +895,10 @@ class DetectionService:
         include_result_image: bool = True
     ) -> Dict[str, Any]:
         """
-        HLS 스트리밍에서 배경 이미지 추출
+        스트리밍에서 배경 이미지 추출 (추후 구현용)
         
         Args:
-            stream_url: HLS 스트리밍 URL
+            stream_url: 스트리밍 URL
             grid_width: 가로 구역 수
             grid_height: 세로 구역 수
             sample_interval: 프레임 샘플링 간격
@@ -979,119 +909,22 @@ class DetectionService:
             Dict: 배경 추출 결과
         """
         try:
-            print(f"스트림 URL 접근 시도: {stream_url}")
-            
+            # 스트리밍 처리 (기본적으로 비디오 처리와 동일하지만 URL 사용)
             cap = cv2.VideoCapture(stream_url)
             if not cap.isOpened():
-                raise Exception(f"HLS 스트림을 열 수 없습니다: {stream_url}")
+                raise Exception(f"스트림을 열 수 없습니다: {stream_url}")
             
-            # 스트림 정보 확인
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            if fps <= 0:
-                fps = 25  # 기본값 설정
+            # 임시 파일로 저장 후 기존 메서드 활용
+            # (실제 구현시에는 스트리밍 직접 처리 로직 추가)
             
-            print(f"스트림 FPS: {fps}, 수집 시간: {duration_seconds}초")
-            
-            # 수집할 총 프레임 수 계산
-            total_frames_needed = int(fps * duration_seconds)
-            sample_frames = max(1, total_frames_needed // (grid_width * grid_height))
-            
-            print(f"총 필요 프레임: {total_frames_needed}, 샘플링 프레임: {sample_frames}")
-            
-            frames = []
-            frame_count = 0
-            collected_count = 0
-            start_time = time.time()
-            
-            # 지정된 시간 동안 프레임 수집
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    print("프레임 읽기 실패 또는 스트림 종료")
-                    break
-                
-                # 경과 시간 체크
-                elapsed_time = time.time() - start_time
-                if elapsed_time >= duration_seconds:
-                    print(f"수집 완료: {elapsed_time:.1f}초 경과")
-                    break
-                
-                # 샘플링 간격에 따라 프레임 저장
-                if frame_count % sample_interval == 0:
-                    frames.append(frame.copy())
-                    collected_count += 1
-                    
-                    # 진행상황 출력 (매 초마다)
-                    if collected_count % max(1, int(fps)) == 0:
-                        print(f"진행: {elapsed_time:.1f}/{duration_seconds}초, 수집된 프레임: {collected_count}")
-                
-                frame_count += 1
-                
-                # 너무 많은 프레임이 수집되지 않도록 제한
-                if collected_count >= total_frames_needed:
-                    print(f"최대 프레임 수집 완료: {collected_count}")
-                    break
-                
-                # 비동기 처리를 위한 짧은 대기
-                if frame_count % 10 == 0:
-                    await asyncio.sleep(0.001)
-            
-            cap.release()
-            
-            if not frames:
-                raise Exception("수집된 프레임이 없습니다")
-            
-            print(f"총 {len(frames)}개 프레임 수집 완료")
-            
-            # 배경 추출 로직 (기존 extract_background와 동일)
-            frame_height, frame_width = frames[0].shape[:2]
-            grid_rows = grid_height
-            grid_cols = grid_width
-            
-            tile_height = frame_height // grid_rows
-            tile_width = frame_width // grid_cols
-            
-            background = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
-            
-            # 각 구역별로 배경 추출
-            for row in range(grid_rows):
-                for col in range(grid_cols):
-                    y1 = row * tile_height
-                    y2 = (row + 1) * tile_height if row < grid_rows - 1 else frame_height
-                    x1 = col * tile_width
-                    x2 = (col + 1) * tile_width if col < grid_cols - 1 else frame_width
-                    
-                    # 해당 구역의 모든 프레임에서 타일 추출
-                    tiles = []
-                    for frame in frames:
-                        tile = frame[y1:y2, x1:x2]
-                        tiles.append(tile)
-                    
-                    if tiles:
-                        # 중위값으로 배경 계산
-                        tiles_array = np.array(tiles)
-                        median_tile = np.median(tiles_array, axis=0).astype(np.uint8)
-                        background[y1:y2, x1:x2] = median_tile
-            
-            result = {
-                "success": True,
-                "background_extracted": True,
-                "frames_processed": len(frames),
-                "grid_size": f"{grid_width}x{grid_height}",
-                "processing_time": time.time() - start_time,
-                "duration_seconds": duration_seconds
+            # 현재는 기본 에러 메시지 반환
+            return {
+                "success": False,
+                "error": "스트리밍 배경 추출은 현재 개발 중입니다. MP4 파일을 사용해주세요."
             }
             
-            # 결과 이미지 포함
-            if include_result_image:
-                _, buffer = cv2.imencode('.jpg', background, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                background_base64 = base64.b64encode(buffer).decode('utf-8')
-                result["background_image"] = background_base64
-            
-            return result
-            
         except Exception as e:
-            print(f"HLS 스트림 배경 추출 오류: {e}")
+            print(f"스트림 배경 추출 오류: {e}")
             return {
                 "success": False,
                 "error": str(e)
