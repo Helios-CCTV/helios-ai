@@ -8,6 +8,7 @@ import time
 import logging
 import shutil
 import os
+import signal
 from datetime import datetime
 from typing import Dict, Any, Optional, List, DefaultDict
 from collections import defaultdict
@@ -359,6 +360,8 @@ class StreamWorker:
                     try:
                         await self._ensure_consumer_group()
                         logger.info("컨슈머 그룹 재생성 완료")
+                        # 재생성 후 잠시 대기하여 무한 루프 방지
+                        await asyncio.sleep(2)
                         continue
                     except Exception as create_error:
                         logger.error(f"컨슈머 그룹 재생성 실패: {create_error}")
@@ -427,6 +430,10 @@ class StreamWorker:
         
         self.running = True
         logger.info(f"Stream Worker 시작: {self.consumer_name}")
+        
+        # Signal handler 설정 (유령 컨슈머 방지)
+        self.setup_signal_handlers()
+        
         # 스트림 상태 로깅
         try:
             rc = await self._get_redis_client()
@@ -471,13 +478,69 @@ class StreamWorker:
             except Exception:
                 pass
 
-            if self.redis_client:
-                await self.redis_client.close()
+            # 유령 컨슈머 cleanup
+            await self.cleanup_consumer()
     
     async def stop(self):
         """워커 중지"""
         logger.info("Stream Worker 중지 요청")
         self.running = False
+        
+        # 유령 컨슈머 cleanup
+        await self.cleanup_consumer()
+    
+    async def cleanup_consumer(self):
+        """유령 컨슈머 정리 - Redis에서 현재 컨슈머 삭제"""
+        try:
+            if self.redis_client:
+                # 모든 스트림에서 현재 컨슈머 삭제
+                for stream in self.streams:
+                    try:
+                        await self.redis_client.xgroup_delconsumer(
+                            stream, 
+                            settings.REDIS_GROUP, 
+                            self.consumer_name
+                        )
+                        logger.info(f"컨슈머 삭제 완료: stream={stream}, consumer={self.consumer_name}")
+                    except Exception as e:
+                        logger.warning(f"컨슈머 삭제 실패(stream={stream}): {e}")
+                
+                # Redis 연결 종료
+                try:
+                    await self.redis_client.close()
+                    logger.info("Redis 연결 종료 완료")
+                except Exception as close_error:
+                    logger.warning(f"Redis 연결 종료 실패: {close_error}")
+                finally:
+                    self.redis_client = None
+        except Exception as e:
+            logger.error(f"컨슈머 cleanup 실패: {e}")
+    
+    def setup_signal_handlers(self):
+        """Signal handler 설정 - 유령 컨슈머 방지"""
+        def handle_exit(signum, frame):
+            logger.info(f"Signal {signum} 수신, cleanup 시작")
+            # 이미 실행 중인 이벤트 루프에서 cleanup 실행
+            if asyncio.get_event_loop().is_running():
+                asyncio.create_task(self.cleanup_consumer())
+            else:
+                # 새로운 이벤트 루프에서 cleanup 실행
+                asyncio.run(self.cleanup_consumer())
+        
+        # Windows와 Unix 호환성을 위한 신호 처리
+        try:
+            signal.signal(signal.SIGTERM, handle_exit)
+            signal.signal(signal.SIGINT, handle_exit)
+            logger.info("Signal handlers 설정 완료")
+        except Exception as e:
+            logger.warning(f"Signal handler 설정 실패: {e}")
+        
+        # Windows에서 지원하는 경우 SIGBREAK도 처리
+        try:
+            if hasattr(signal, 'SIGBREAK'):
+                signal.signal(signal.SIGBREAK, handle_exit)
+        except:
+            pass
     
     def update_concurrency(self, new_concurrency: int):
         """동시성 업데이트"""
