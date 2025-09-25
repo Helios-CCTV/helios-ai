@@ -134,7 +134,7 @@ async def shutdown_event():
     global worker_task
     try:
         if worker_task:
-            # 워커 중지
+            # 워커 중지 (유령 컨슈머 cleanup 포함)
             from app.worker.stream_worker import get_stream_worker
             worker = get_stream_worker()
             await worker.stop()
@@ -147,6 +147,16 @@ async def shutdown_event():
                 pass
             
             logger.info("Stream Worker 정리 완료")
+        else:
+            # worker_task가 없어도 cleanup 시도 (혹시 모를 유령 컨슈머 방지)
+            try:
+                from app.worker.stream_worker import get_stream_worker
+                worker = get_stream_worker()
+                await worker.cleanup_consumer()
+                logger.info("유령 컨슈머 cleanup 완료")
+            except Exception as cleanup_error:
+                logger.warning(f"유령 컨슈머 cleanup 실패: {cleanup_error}")
+                
     except Exception as e:
         logger.error(f"Stream Worker 정리 실패: {e}")
 
@@ -198,4 +208,4 @@ if __name__ == "__main__":
     import uvicorn
     
     logger.info(f"Starting {settings.PROJECT_NAME} version {settings.VERSION}")
-    uvicorn.run("main:app", host="0.0.0.0", port=11100, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=11111, reload=False)
