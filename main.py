@@ -170,10 +170,7 @@ async def root():
     """루트 경로는 API 문서로 리다이렉트합니다."""
     return RedirectResponse(url="/docs")
 
-@app.get("/stream-test", include_in_schema=False)
-async def stream_test():
-    """스트리밍 테스트 페이지로 리다이렉트합니다."""
-    return RedirectResponse(url="/static/stream_test.html")
+
 
 @app.post("/control/concurrency", tags=["control"])
 async def update_concurrency(n: int):
