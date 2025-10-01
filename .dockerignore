@@ -1,0 +1,95 @@
+# Docker ignore 파일
+# Git 관련
+.git/
+.gitignore
+README.md
+
+# Python 관련
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 가상환경
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 로그 파일
+*.log
+logs/
+
+# 테스트 관련
+.coverage
+.pytest_cache/
+.tox/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# 임시 파일
+.tmp/
+temp/
+*.tmp
+*.temp
+
+# OS 관련
+.DS_Store
+Thumbs.db
+
+# 개발용 파일
+docker-compose.override.yml
+.env.local
+.env.development
+
+# 모델/데이터/영상
+*.pt
+*.pth
+*.onnx
+*.h5
+models/
+checkpoints/
+weights/
+data/
+datasets/
+videos/
+*.mp4
+*.avi
+*.mkv
+
+# 캐시
+__pycache__/
+*.pickle
+*.pkl
+.cache/
+.wheels/
+pip-wheel-metadata/
